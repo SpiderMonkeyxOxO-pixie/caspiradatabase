@@ -312,10 +312,13 @@ code, .gh-mono { font-family: "JetBrains Mono", "SFMono-Regular", Consolas, mono
 # Sign-in gate — demo accounts provisioned for the IT Operations team
 # ---------------------------------------------------------------------------
 ACCOUNTS = {
-    "CSPR-Monitoring Romeo": "Monitoring",
-    "CSPR-Data Operation Specialist Marcus": "Data Operations Specialist",
-    "CSPR-I.T Assistant Bao": "I.T Assistant",
+    "CSPR-Data Operation Specialist": "Data Operation Specialist",
+    "CSPR-Monitoring": "Monitoring",
+    "CSPR-I.T Assistant": "I.T Assistant",
     "CSPR-General Manager": "General Manager",
+    "CSPR-Back-end Developer": "Back-end Developer",
+    "CSPR-Dev-Ops": "Dev-Ops",
+    "CSPR-Infrastructure Engineer": "Infrastructure Engineer",
 }
 ACCOUNT_PASSWORD = "@Tiger112211"
 
