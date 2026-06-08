@@ -8,6 +8,8 @@ Run with:  streamlit run app.py
 """
 
 import base64
+import random
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -196,8 +198,9 @@ section[data-testid="stSidebar"] div[data-testid="stVerticalBlockBorderWrapper"]
 .stButton > button:hover { background-color: #1f2940; border-color: #94a3b8; color: #e2e8f0; }
 
 /* Tabs — underline style like GitHub PR tabs */
-button[data-baseweb="tab"] { font-weight: 500; color: #94a3b8; }
-button[data-baseweb="tab"][aria-selected="true"] { color: #e2e8f0; }
+button[data-baseweb="tab"] { font-weight: 500; color: #cbd5e1; }
+button[data-baseweb="tab"]:hover { color: #67e8f9; }
+button[data-baseweb="tab"][aria-selected="true"] { color: #e2e8f0; font-weight: 600; }
 div[data-baseweb="tab-highlight"] { background-color: #8b5cf6 !important; height: 2px; }
 div[data-baseweb="tab-border"] { background-color: #1a2338 !important; }
 
@@ -289,8 +292,73 @@ span[data-baseweb="tag"] * { color: #67e8f9 !important; fill: #67e8f9 !important
 
 hr { border-color: #1a2338; }
 code, .gh-mono { font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace; font-size: 0.82em; }
+
+/* Sign-in screen */
+.login-brand { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 6px; }
+.login-logo { width: 52px; height: 52px; border-radius: 12px; }
+.login-title { color: #e2e8f0; font-size: 1.3rem; font-weight: 700; letter-spacing: -0.01em; }
+.login-sub { color: #94a3b8; font-size: 0.84rem; text-align: center; max-width: 360px; line-height: 1.5; }
+.login-accounts {
+    border: 1px solid #1f2940; border-radius: 8px; background-color: #121729;
+    padding: 12px 16px; margin-top: 4px;
+}
+.login-accounts-label { color: #64748b; font-size: 0.66rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 7px; }
+.login-account-row { color: #cbd5e1; font-size: 0.82rem; padding: 3px 0; display: flex; justify-content: space-between; gap: 10px; }
+.login-account-role { color: #67e8f9; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
+
+# ---------------------------------------------------------------------------
+# Sign-in gate — demo accounts provisioned for the IT Operations team
+# ---------------------------------------------------------------------------
+ACCOUNTS = {
+    "CSPR-Monitoring Romeo": "Monitoring",
+    "CSPR-Data Operation Specialist Marcus": "Data Operations Specialist",
+    "CSPR-I.T Assistant Bao": "I.T Assistant",
+    "CSPR-General Manager": "General Manager",
+}
+ACCOUNT_PASSWORD = "@Tiger112211"
+
+if "auth_user" not in st.session_state:
+    st.session_state.auth_user = None
+
+if st.session_state.auth_user is None:
+    _, login_col, _ = st.columns([1, 1.4, 1])
+    with login_col:
+        st.write("")
+        st.write("")
+        st.markdown(
+            f"""
+            <div class="login-brand">
+                <img class="login-logo" src="{LOGO_DATA_URI}" alt="{tm.PROVIDER} logo" />
+                <div class="login-title">{tm.PROVIDER}</div>
+                <div class="login-sub">Database Infrastructure Monitoring &middot; sign in with your IT Operations account to access the managed-services console.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.write("")
+        with st.form("login_form", border=True):
+            username = st.selectbox("Account", options=list(ACCOUNTS.keys()))
+            password = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Sign in", icon=":material/login:", width="stretch", type="primary")
+            if submitted:
+                if password == ACCOUNT_PASSWORD:
+                    st.session_state.auth_user = username
+                    st.rerun()
+                else:
+                    st.error("Incorrect password for this account. Check with your team lead and try again.")
+
+        st.markdown(
+            '<div class="login-accounts"><div class="login-accounts-label">Provisioned accounts</div>'
+            + "".join(
+                f'<div class="login-account-row"><span>{name}</span><span class="login-account-role">{role}</span></div>'
+                for name, role in ACCOUNTS.items()
+            )
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+    st.stop()
 
 # Pill-badge palette — tinted fills over dark backgrounds, GitHub label style
 STATUS_STYLE = {
@@ -496,6 +564,11 @@ with st.sidebar:
     if st.button("Refresh metrics", icon=":material/refresh:", width="stretch"):
         st.session_state.jitter_seed += 1
 
+    live_mode = st.toggle(
+        "Live mode", value=True, key="live_mode",
+        help="Continuously stream the Server detail charts, redrawing every few seconds to simulate a live telemetry feed.",
+    )
+
     window_hours = st.select_slider(
         ":material/history: History window (hours)", options=[6, 12, 24, 48, 72], value=24,
     )
@@ -512,7 +585,7 @@ with st.sidebar:
         f"""
         <div class="sb-session">
             <div class="sb-session-row"><span class="live-dot"></span> All systems operational</div>
-            <div class="sb-session-meta">Signed in as <b>IT Operations</b></div>
+            <div class="sb-session-meta">Signed in as <b>{st.session_state.auth_user}</b> &middot; {ACCOUNTS.get(st.session_state.auth_user, "")}</div>
             <div class="sb-session-meta">Last refreshed {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}</div>
         </div>
         """,
@@ -531,6 +604,10 @@ with st.sidebar:
             documentation_dialog()
         if st.button("Report an issue", icon=":material/bug_report:", width="stretch", type="tertiary"):
             report_issue_dialog()
+        st.divider()
+        if st.button("Sign out", icon=":material/logout:", width="stretch", type="tertiary"):
+            st.session_state.auth_user = None
+            st.rerun()
         st.divider()
         st.caption(f"Build: {tm.PROVIDER} console &middot; v1.0".replace("&middot;", "·"))
 
@@ -756,9 +833,46 @@ with nav_detail:
         tab1, tab2, tab3, tab4 = st.tabs(["Resource utilization", "Query latency and connections", "Replication", "Capacity planning"])
 
         with tab1:
-            st.caption("CPU, memory and disk utilization (percent) over the selected window")
-            st.line_chart(sel_history[["cpu_pct", "memory_pct", "disk_pct"]], height=320,
-                          color=["#8b5cf6", "#22d3ee", "#34d399"])
+            if live_mode:
+                server_obj = next(s for s in servers if s["name"] == selected)
+                buffer_key = f"live_buffer_{client['code']}_{selected}"
+
+                @st.fragment(run_every=2)
+                def _live_resource_chart(server_obj=server_obj, buffer_key=buffer_key, base_seed=seed):
+                    if buffer_key not in st.session_state:
+                        seed_hist = tm.generate_history(server_obj, hours=2, jitter_seed=f"{base_seed}-live-seed").tail(30)
+                        st.session_state[buffer_key] = [
+                            {"timestamp": row.timestamp, "cpu_pct": float(row.cpu_pct),
+                             "memory_pct": float(row.memory_pct), "disk_pct": float(row.disk_pct)}
+                            for row in seed_hist.itertuples()
+                        ]
+
+                    buf = st.session_state[buffer_key]
+                    last = buf[-1]
+                    buf.append({
+                        "timestamp": pd.Timestamp.now(),
+                        "cpu_pct": min(99.0, max(1.0, last["cpu_pct"] + random.gauss(0, 4.5))),
+                        "memory_pct": min(97.0, max(5.0, last["memory_pct"] + random.gauss(0, 2.0))),
+                        "disk_pct": min(98.0, max(10.0, last["disk_pct"] + random.gauss(0, 0.4))),
+                    })
+                    if len(buf) > 36:
+                        buf.pop(0)
+
+                    live_df = pd.DataFrame(buf).set_index("timestamp")
+                    st.markdown(
+                        '<span class="live-indicator"><span class="live-dot"></span>LIVE</span>'
+                        f'&nbsp;<span style="color:#64748b; font-size:0.78rem;">streaming &middot; '
+                        f'CPU, memory and disk utilization (percent) &middot; updated {pd.Timestamp.now().strftime("%H:%M:%S")}</span>',
+                        unsafe_allow_html=True,
+                    )
+                    st.line_chart(live_df[["cpu_pct", "memory_pct", "disk_pct"]], height=320,
+                                  color=["#8b5cf6", "#22d3ee", "#34d399"])
+
+                _live_resource_chart()
+            else:
+                st.caption("CPU, memory and disk utilization (percent) over the selected window")
+                st.line_chart(sel_history[["cpu_pct", "memory_pct", "disk_pct"]], height=320,
+                              color=["#8b5cf6", "#22d3ee", "#34d399"])
 
         with tab2:
             lc1, lc2 = st.columns(2)
