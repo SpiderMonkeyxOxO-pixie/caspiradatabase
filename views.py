@@ -20,35 +20,39 @@ import telemetry as tm
 # CONSTANTS & SHARED STYLE HELPERS
 # ============================================================
 
+_B = "background:"
+_BD = ";border:"
+_C = ";color:"
+
 STATUS_STYLE = {
-    "Healthy":  "background-color:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.4);",
-    "Warning":  "background-color:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.4);",
-    "Critical": "background-color:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.4);",
+    "Healthy":  f"{_B}rgba(34,197,94,0.12){_C}#22c55e{_BD}1px solid rgba(34,197,94,0.28);",
+    "Warning":  f"{_B}rgba(245,158,11,0.12){_C}#f59e0b{_BD}1px solid rgba(245,158,11,0.28);",
+    "Critical": f"{_B}rgba(239,68,68,0.12){_C}#ef4444{_BD}1px solid rgba(239,68,68,0.28);",
 }
 SEVERITY_STYLE = {
-    "Critical": "background-color:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.4);",
-    "Warning":  "background-color:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.4);",
-    "Info":     "background-color:rgba(34,211,238,0.15);color:#22d3ee;border:1px solid rgba(34,211,238,0.4);",
+    "Critical": f"{_B}rgba(239,68,68,0.12){_C}#ef4444{_BD}1px solid rgba(239,68,68,0.28);",
+    "Warning":  f"{_B}rgba(245,158,11,0.12){_C}#f59e0b{_BD}1px solid rgba(245,158,11,0.28);",
+    "Info":     f"{_B}rgba(34,211,238,0.12){_C}#22d3ee{_BD}1px solid rgba(34,211,238,0.28);",
 }
 ALERT_STATUS_STYLE = {
-    "Open":         "background-color:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.4);",
-    "Acknowledged": "background-color:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.4);",
-    "Resolved":     "background-color:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.4);",
+    "Open":         f"{_B}rgba(239,68,68,0.12){_C}#ef4444{_BD}1px solid rgba(239,68,68,0.28);",
+    "Acknowledged": f"{_B}rgba(245,158,11,0.12){_C}#f59e0b{_BD}1px solid rgba(245,158,11,0.28);",
+    "Resolved":     f"{_B}rgba(34,197,94,0.12){_C}#22c55e{_BD}1px solid rgba(34,197,94,0.28);",
 }
-RESULT_STYLE  = {"Success": "color:#22c55e;", "Failed": "color:#ef4444;font-weight:600;"}
+RESULT_STYLE  = {"Success": "color:#22c55e;font-weight:600;", "Failed": "color:#ef4444;font-weight:700;"}
 PRIORITY_STYLE = {
-    "Critical": "background-color:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.4);",
-    "High":     "background-color:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.4);",
-    "Medium":   "background-color:rgba(34,211,238,0.15);color:#22d3ee;border:1px solid rgba(34,211,238,0.4);",
-    "Low":      "background-color:rgba(148,163,184,0.15);color:#94a3b8;border:1px solid rgba(148,163,184,0.4);",
+    "Critical": f"{_B}rgba(239,68,68,0.12){_C}#ef4444{_BD}1px solid rgba(239,68,68,0.28);",
+    "High":     f"{_B}rgba(245,158,11,0.12){_C}#f59e0b{_BD}1px solid rgba(245,158,11,0.28);",
+    "Medium":   f"{_B}rgba(34,211,238,0.12){_C}#22d3ee{_BD}1px solid rgba(34,211,238,0.28);",
+    "Low":      f"{_B}rgba(148,163,184,0.09){_C}#475569{_BD}1px solid rgba(148,163,184,0.2);",
 }
 TICKET_STATUS_STYLE = {
-    "Open":        "background-color:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.4);",
-    "In Progress": "background-color:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.4);",
-    "Escalated":   "background-color:rgba(139,92,246,0.15);color:#8b5cf6;border:1px solid rgba(139,92,246,0.4);",
-    "Resolved":    "background-color:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.4);",
+    "Open":        f"{_B}rgba(239,68,68,0.12){_C}#ef4444{_BD}1px solid rgba(239,68,68,0.28);",
+    "In Progress": f"{_B}rgba(245,158,11,0.12){_C}#f59e0b{_BD}1px solid rgba(245,158,11,0.28);",
+    "Escalated":   f"{_B}rgba(139,92,246,0.12){_C}#8b5cf6{_BD}1px solid rgba(139,92,246,0.28);",
+    "Resolved":    f"{_B}rgba(34,197,94,0.12){_C}#22c55e{_BD}1px solid rgba(34,197,94,0.28);",
 }
-BADGE_CSS = "padding:2px 10px;border-radius:2em;font-size:0.74rem;font-weight:600;letter-spacing:0.02em;"
+BADGE_CSS = "padding:2px 9px;border-radius:2em;font-size:0.68rem;font-weight:700;letter-spacing:0.04em;"
 
 ALL_ROLES = [
     "General Manager", "Monitoring", "Data Operation Specialist",
