@@ -319,23 +319,37 @@ _ROLE_COLOR = {
     "Data Analyst":             "#2dd4bf",
 }
 
-_CH_ICON = {
-    "general":           "📢",
-    "incidents":         "🚨",
-    "operations":        "⚙️",
-    "database":          "🗄️",
-    "development":       "💻",
-    "deployments":       "🚀",
-    "security":          "🔒",
-    "backups-dr":        "💾",
-    "client-updates":    "👥",
-    "reports-analytics": "📊",
-    "on-call":           "📱",
-    "infrastructure":    "🏗️",
-}
-
 _IMAGE_MIMES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"}
 _MAX_FILE_MB = 5
+
+
+def _svg(paths: str, size: int = 14, color: str = "currentColor", style: str = "") -> str:
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" '
+        f'viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="1.75" '
+        f'stroke-linecap="round" stroke-linejoin="round" '
+        f'style="display:inline-block;vertical-align:middle;{style}">{paths}</svg>'
+    )
+
+
+_CH_SVG: dict[str, str] = {
+    "general":           '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+    "incidents":         '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/>',
+    "operations":        '<path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>',
+    "database":          '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>',
+    "development":       '<path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/>',
+    "deployments":       '<line x1="12" x2="12" y1="19" y2="5"/><polyline points="5 12 12 5 19 12"/>',
+    "security":          '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+    "backups-dr":        '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',
+    "client-updates":    '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    "reports-analytics": '<line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/>',
+    "on-call":           '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.34 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9a16 16 0 0 0 6.29 6.29l.61-.61a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
+    "infrastructure":    '<rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/>',
+}
+_SVG_CLIP  = '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>'
+_SVG_IMG   = '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>'
+_SVG_USERS = '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'
+_SVG_CHAT  = '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'
 
 
 def _role_avatar(role: str) -> str:
@@ -358,7 +372,6 @@ def render_channels(current_role: str):
     if "ch_last_seen" not in st.session_state:
         st.session_state.ch_last_seen = {}
 
-    # ── layout ──────────────────────────────────────────────────────────
     col_list, col_msgs = st.columns([1, 3], gap="medium")
 
     # ── channel list sidebar ────────────────────────────────────────────
@@ -369,38 +382,50 @@ def render_channels(current_role: str):
             unsafe_allow_html=True,
         )
         for ch in store.CHANNELS:
-            msgs = store.get_channel_messages(ch["id"])
-            last_seen = st.session_state.ch_last_seen.get(ch["id"], 0)
-            unread = max(0, len(msgs) - last_seen)
-            is_active = st.session_state.ch_selected == ch["id"]
-            icon = _CH_ICON.get(ch["id"], "#")
+            msgs    = store.get_channel_messages(ch["id"])
+            unread  = max(0, len(msgs) - st.session_state.ch_last_seen.get(ch["id"], 0))
+            active  = st.session_state.ch_selected == ch["id"]
+            ic_col  = "#22d3ee" if active else "#475569"
 
-            # last-message preview
+            # preview under button
             preview_line = ""
             if msgs:
                 lm = msgs[-1]
-                preview_text = lm.get("text") or ("📎 " + lm["attachment"]["name"] if lm.get("attachment") else "")
+                preview_text = lm.get("text") or (lm["attachment"]["name"] if lm.get("attachment") else "")
                 sender = lm["from"].split()[0]
-                trimmed = preview_text[:24] + ("…" if len(preview_text) > 24 else "")
+                trimmed = preview_text[:26] + ("…" if len(preview_text) > 26 else "")
                 preview_line = f"{sender}: {trimmed}"
 
-            badge = f' <span style="background:#ef4444;color:#fff;border-radius:999px;padding:0 5px;font-size:0.65rem;font-weight:700;">{unread}</span>' if unread and not is_active else ""
-            label = f"{icon} {ch['name']}{badge}"
+            badge = (
+                f'<span style="background:#ef4444;color:#fff;border-radius:999px;'
+                f'padding:1px 6px;font-size:0.62rem;font-weight:700;margin-left:4px;">{unread}</span>'
+                if unread and not active else ""
+            )
 
-            if st.button(
-                label,
-                key=f"ch_btn_{ch['id']}",
-                type="primary" if is_active else "secondary",
-                use_container_width=True,
-                help=ch["desc"],
-            ):
-                st.session_state.ch_selected = ch["id"]
-                st.session_state.ch_last_seen[ch["id"]] = len(msgs)
-                st.rerun()
+            # icon + button in tight 2-col layout
+            ic, btn = st.columns([1, 7], gap="small")
+            with ic:
+                st.markdown(
+                    f'<div style="display:flex;align-items:center;justify-content:center;'
+                    f'height:36px;">{_svg(_CH_SVG.get(ch["id"], ""), 15, ic_col)}</div>',
+                    unsafe_allow_html=True,
+                )
+            with btn:
+                label = ch["name"] + (f" ({unread})" if unread and not active else "")
+                if st.button(
+                    label,
+                    key=f"ch_btn_{ch['id']}",
+                    type="primary" if active else "secondary",
+                    use_container_width=True,
+                    help=ch["desc"],
+                ):
+                    st.session_state.ch_selected = ch["id"]
+                    st.session_state.ch_last_seen[ch["id"]] = len(msgs)
+                    st.rerun()
 
             if preview_line:
                 st.markdown(
-                    f'<div style="font-size:0.67rem;color:#475569;margin:-4px 0 4px 4px;'
+                    f'<div style="font-size:0.66rem;color:#475569;margin:-4px 0 4px 2px;'
                     f'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">{preview_line}</div>',
                     unsafe_allow_html=True,
                 )
@@ -409,78 +434,86 @@ def render_channels(current_role: str):
     with col_msgs:
         sel_id = st.session_state.ch_selected
         sel_ch = next((c for c in store.CHANNELS if c["id"] == sel_id), store.CHANNELS[0])
-        msgs = store.get_channel_messages(sel_id)
-        st.session_state.ch_last_seen[sel_id] = len(msgs)  # mark seen on view
-        icon = _CH_ICON.get(sel_id, "#")
+        msgs   = store.get_channel_messages(sel_id)
+        st.session_state.ch_last_seen[sel_id] = len(msgs)
 
-        # header row
+        ch_icon_svg = _svg(_CH_SVG.get(sel_id, ""), 18, "#22d3ee", "margin-right:7px;")
+
+        # header
         hc1, hc2 = st.columns([5, 1])
         with hc1:
             st.markdown(
-                f'<div style="font-size:1.05rem;font-weight:700;color:#e2e8f0;">'
-                f'{icon} {sel_ch["name"]}</div>'
-                f'<div style="font-size:0.78rem;color:#64748b;margin-top:1px;">{sel_ch["desc"]}</div>',
+                f'<div style="font-size:1.05rem;font-weight:700;color:#e2e8f0;'
+                f'display:flex;align-items:center;">'
+                f'{ch_icon_svg}{sel_ch["name"]}</div>'
+                f'<div style="font-size:0.78rem;color:#64748b;margin-top:2px;">'
+                f'{sel_ch["desc"]}</div>',
                 unsafe_allow_html=True,
             )
         with hc2:
+            u_svg = _svg(_SVG_USERS, 12, "#475569", "margin-right:3px;")
+            c_svg = _svg(_SVG_CHAT,  12, "#475569", "margin-right:3px;margin-left:8px;")
             st.markdown(
-                f'<div style="text-align:right;font-size:0.72rem;color:#475569;padding-top:6px;">'
-                f'👥 {len(ALL_ROLES)}&nbsp;members&nbsp;&nbsp;💬&nbsp;{len(msgs)}</div>',
+                f'<div style="text-align:right;font-size:0.72rem;color:#475569;padding-top:8px;">'
+                f'{u_svg}{len(ALL_ROLES)}&nbsp;{c_svg}{len(msgs)}</div>',
                 unsafe_allow_html=True,
             )
         st.markdown('<hr style="border-color:#1e293b;margin:6px 0 10px;">', unsafe_allow_html=True)
 
-        # ── bubbles ──────────────────────────────────────────────────────
+        # ── message bubbles ───────────────────────────────────────────
         bubbles_html = ""
         if not msgs:
+            empty_icon = _svg(_CH_SVG.get(sel_id, ""), 40, "#1e293b")
             bubbles_html = (
                 f'<div style="display:flex;flex-direction:column;align-items:center;'
-                f'justify-content:center;height:100%;padding:48px 0;">'
-                f'<div style="font-size:2.2rem;margin-bottom:10px;">{icon}</div>'
-                f'<div style="color:#475569;font-size:0.9rem;font-weight:600;">No messages yet</div>'
-                f'<div style="color:#334155;font-size:0.78rem;margin-top:4px;">'
-                f'Be the first to post in {sel_ch["name"]}!</div></div>'
+                f'justify-content:center;height:100%;padding:52px 0;">'
+                f'<div style="margin-bottom:14px;">{empty_icon}</div>'
+                f'<div style="color:#334155;font-size:0.9rem;font-weight:600;">No messages yet</div>'
+                f'<div style="color:#1e293b;font-size:0.78rem;margin-top:4px;">'
+                f'Be the first to post in {sel_ch["name"]}.</div></div>'
             )
 
         for m in msgs[-100:]:
-            is_mine = m["from"] == current_role
-            rc = _ROLE_COLOR.get(m["from"], "#94a3b8")
+            is_mine  = m["from"] == current_role
+            rc       = _ROLE_COLOR.get(m["from"], "#94a3b8")
             initials = _role_avatar(m["from"])
             flex_dir = "row-reverse" if is_mine else "row"
-            align = "flex-end" if is_mine else "flex-start"
-            br = "12px 4px 12px 12px" if is_mine else "4px 12px 12px 12px"
-            bg = "rgba(34,211,238,0.07)" if is_mine else "rgba(15,23,42,0.9)"
-            bd = "1px solid rgba(34,211,238,0.18)" if is_mine else "1px solid #1e293b"
+            align    = "flex-end"    if is_mine else "flex-start"
+            br       = "12px 4px 12px 12px" if is_mine else "4px 12px 12px 12px"
+            bg       = "rgba(34,211,238,0.07)" if is_mine else "rgba(15,23,42,0.9)"
+            bd       = "1px solid rgba(34,211,238,0.18)" if is_mine else "1px solid #1e293b"
 
             ts = m.get("ts", "")
-            now_date = datetime.now().strftime("%Y-%m-%d")
-            time_str = ts[11:16] if len(ts) >= 16 else ""
-            date_str = ts[:10] if len(ts) >= 10 else ""
-            time_display = time_str if date_str == now_date else f"{date_str} {time_str}"
+            now_date     = datetime.now().strftime("%Y-%m-%d")
+            time_str     = ts[11:16] if len(ts) >= 16 else ""
+            date_str     = ts[:10]   if len(ts) >= 10 else ""
+            time_display = time_str  if date_str == now_date else f"{date_str} {time_str}"
 
-            # attachment HTML
             att_html = ""
             att = m.get("attachment")
             if att:
                 if att.get("mime", "") in _IMAGE_MIMES:
+                    img_label_svg = _svg(_SVG_IMG, 11, "#475569", "margin-right:3px;")
                     att_html = (
                         f'<div style="margin-top:7px;">'
                         f'<img src="data:{att["mime"]};base64,{att["data_b64"]}" '
                         f'style="max-width:260px;max-height:260px;border-radius:8px;'
                         f'display:block;border:1px solid rgba(255,255,255,0.08);" />'
                         f'<div style="font-size:0.67rem;color:#475569;margin-top:3px;">'
-                        f'🖼 {att["name"]} · {_fmt_size(att.get("size", 0))}</div></div>'
+                        f'{img_label_svg}{att["name"]} &middot; {_fmt_size(att.get("size", 0))}'
+                        f'</div></div>'
                     )
                 else:
+                    file_svg = _svg(_SVG_CLIP, 20, "#64748b")
                     att_html = (
                         f'<div style="margin-top:7px;background:rgba(255,255,255,0.04);'
                         f'border:1px solid rgba(255,255,255,0.09);border-radius:8px;'
-                        f'padding:8px 12px;display:inline-flex;align-items:center;gap:10px;">'
-                        f'<span style="font-size:1.5rem;">📎</span>'
-                        f'<div><div style="font-size:0.82rem;color:#e2e8f0;font-weight:600;">'
-                        f'{att["name"]}</div>'
-                        f'<div style="font-size:0.69rem;color:#64748b;">'
-                        f'{_fmt_size(att.get("size", 0))}</div></div></div>'
+                        f'padding:9px 13px;display:inline-flex;align-items:center;gap:10px;">'
+                        f'{file_svg}'
+                        f'<div>'
+                        f'<div style="font-size:0.82rem;color:#e2e8f0;font-weight:600;">{att["name"]}</div>'
+                        f'<div style="font-size:0.69rem;color:#64748b;">{_fmt_size(att.get("size", 0))}</div>'
+                        f'</div></div>'
                     )
 
             text_html = (
@@ -488,25 +521,21 @@ def render_channels(current_role: str):
                 f'{m["text"]}</div>'
             ) if m.get("text") else ""
 
-            ta_name = "right" if is_mine else "left"
+            ta = "right" if is_mine else "left"
             bubbles_html += (
                 f'<div style="display:flex;flex-direction:{flex_dir};align-items:flex-start;'
                 f'gap:8px;margin-bottom:12px;align-self:{align};max-width:84%;">'
-                # avatar circle
                 f'<div style="flex-shrink:0;width:34px;height:34px;border-radius:50%;'
-                f'background:{rc}1a;border:2px solid {rc};display:flex;'
-                f'align-items:center;justify-content:center;'
-                f'font-size:0.6rem;font-weight:800;color:{rc};">{initials}</div>'
-                # content
+                f'background:{rc}1a;border:2px solid {rc};display:flex;align-items:center;'
+                f'justify-content:center;font-size:0.6rem;font-weight:800;color:{rc};">{initials}</div>'
                 f'<div style="flex:1;min-width:0;">'
                 f'<div style="font-size:0.7rem;font-weight:700;color:{rc};'
-                f'margin-bottom:3px;text-align:{ta_name};">'
+                f'margin-bottom:3px;text-align:{ta};">'
                 f'{m["from"]} <span style="color:#475569;font-weight:400;font-size:0.67rem;">'
                 f'{time_display}</span></div>'
                 f'<div style="background:{bg};border:{bd};border-radius:{br};padding:9px 13px;">'
                 f'{text_html}{att_html}</div>'
-                f'</div>'
-                f'</div>'
+                f'</div></div>'
             )
 
         st.markdown(
@@ -517,7 +546,7 @@ def render_channels(current_role: str):
             unsafe_allow_html=True,
         )
 
-        # ── compose form ──────────────────────────────────────────────
+        # ── compose ───────────────────────────────────────────────────
         with st.container(border=True):
             with st.form(f"ch_compose_{sel_id}", clear_on_submit=True):
                 msg_text = st.text_area(
@@ -527,7 +556,7 @@ def render_channels(current_role: str):
                     height=68,
                 )
                 attach_file = st.file_uploader(
-                    "Attach file or image (optional)",
+                    "Attach file or image",
                     type=["png", "jpg", "jpeg", "gif", "webp",
                           "pdf", "csv", "xlsx", "txt", "log", "json", "zip"],
                     help=f"Images display inline · Max {_MAX_FILE_MB} MB",
@@ -536,7 +565,12 @@ def render_channels(current_role: str):
                 fc1, fc2 = st.columns([5, 1])
                 with fc1:
                     if attach_file:
-                        st.caption(f"📎 {attach_file.name} · {_fmt_size(attach_file.size)}")
+                        clip_s = _svg(_SVG_CLIP, 12, "#64748b", "margin-right:4px;")
+                        st.markdown(
+                            f'<div style="font-size:0.78rem;color:#64748b;padding-top:4px;">'
+                            f'{clip_s}{attach_file.name} &middot; {_fmt_size(attach_file.size)}</div>',
+                            unsafe_allow_html=True,
+                        )
                 with fc2:
                     submitted = st.form_submit_button(
                         "Send", icon=":material/send:", type="primary", use_container_width=True,
@@ -548,7 +582,7 @@ def render_channels(current_role: str):
                         attachment = None
                         if attach_file is not None:
                             if attach_file.size > _MAX_FILE_MB * 1024 * 1024:
-                                st.error(f"File exceeds {_MAX_FILE_MB} MB limit. Choose a smaller file.")
+                                st.error(f"File exceeds {_MAX_FILE_MB} MB limit.")
                             else:
                                 raw = attach_file.read()
                                 attachment = {
