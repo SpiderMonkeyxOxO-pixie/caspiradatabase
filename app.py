@@ -319,6 +319,14 @@ ACCOUNTS = {
     "CSPR-Back-end Developer": "Back-end Developer",
     "CSPR-Dev-Ops": "Dev-Ops",
     "CSPR-Infrastructure Engineer": "Infrastructure Engineer",
+    "CSPR-Customer Service": "Customer Service",
+    "CSPR-Data Analyst": "Data Analyst",
+}
+
+ALL_TABS = ["Fleet", "Server detail", "Alerts & incidents", "Backups & maintenance", "Toolkit"]
+ROLE_TABS = {
+    "Customer Service": ["Fleet", "Alerts & incidents"],
+    "Data Analyst":     ["Fleet", "Server detail", "Alerts & incidents", "Backups & maintenance"],
 }
 ACCOUNT_PASSWORD = "@Tiger112211"
 
@@ -694,12 +702,13 @@ st.write("")
 # ---------------------------------------------------------------------------
 # Primary navigation — panel-style tabs replace a long single-page scroll
 # ---------------------------------------------------------------------------
-nav_fleet, nav_detail, nav_alerts, nav_ops, nav_toolkit = st.tabs([
-    "Fleet", "Server detail", "Alerts & incidents", "Backups & maintenance", "Toolkit",
-])
+_current_role = ACCOUNTS.get(st.session_state.auth_user, "")
+_allowed_tabs = ROLE_TABS.get(_current_role, ALL_TABS)
+_tab_objects = st.tabs(_allowed_tabs)
+tab_map = dict(zip(_allowed_tabs, _tab_objects))
 
 # ---- Fleet ------------------------------------------------------------------
-with nav_fleet:
+with tab_map["Fleet"]:
     with st.container(border=True):
         info_card(
             title="Fleet Inventory",
@@ -791,28 +800,29 @@ with nav_fleet:
         )
 
 # ---- Server detail -----------------------------------------------------------
-with nav_detail:
-    with st.container(border=True):
-        info_card(
-            title="Server Detail",
-            note="This is where root cause gets found — a deep dive into one host's utilization, latency, "
-                 "replication and capacity trajectory. Skipping this step risks chasing symptoms instead of "
-                 "the underlying cause, and missing early signs of disk exhaustion that turn into emergency "
-                 "downtime later.",
-        )
-        focus_server = st.session_state.get("focus_server")
-        default_index = server_names.index(focus_server) if focus_server in server_names else 0
-        selected = st.selectbox("Select a server to inspect", server_names, index=default_index)
-        if focus_server and focus_server == selected:
-            st.session_state.pop("focus_server", None)
-            st.caption(f"↳ Jumped here from Alerts & incidents — **{selected}** was preselected from the alert you picked.")
-        sel_snapshot = next(s for s in snapshots if s["name"] == selected)
-        sel_history = histories[selected].set_index("timestamp")
+if "Server detail" in tab_map:
+    with tab_map["Server detail"]:
+        with st.container(border=True):
+            info_card(
+                title="Server Detail",
+                note="This is where root cause gets found — a deep dive into one host's utilization, latency, "
+                     "replication and capacity trajectory. Skipping this step risks chasing symptoms instead of "
+                     "the underlying cause, and missing early signs of disk exhaustion that turn into emergency "
+                     "downtime later.",
+            )
+            focus_server = st.session_state.get("focus_server")
+            default_index = server_names.index(focus_server) if focus_server in server_names else 0
+            selected = st.selectbox("Select a server to inspect", server_names, index=default_index)
+            if focus_server and focus_server == selected:
+                st.session_state.pop("focus_server", None)
+                st.caption(f"↳ Jumped here from Alerts & incidents — **{selected}** was preselected from the alert you picked.")
+            sel_snapshot = next(s for s in snapshots if s["name"] == selected)
+            sel_history = histories[selected].set_index("timestamp")
 
-        info_col, metric_col = st.columns([2, 3], gap="large")
-        with info_col:
-            st.markdown(
-                f"""
+            info_col, metric_col = st.columns([2, 3], gap="large")
+            with info_col:
+                st.markdown(
+                    f"""
 | | |
 |---|---|
 | **Hostname** | {sel_snapshot['hostname']} |
@@ -822,112 +832,112 @@ with nav_detail:
 | **Role** | {sel_snapshot['role']} |
 | **Region** | {sel_snapshot['region']} |
 """
-            )
+                )
 
-        with metric_col:
-            d1, d2, d3 = st.columns(3)
-            d1.metric("Status", sel_snapshot["status"])
-            d1.metric("CPU utilization", f"{sel_snapshot['cpu_pct']:.1f}%")
-            d2.metric("Memory utilization", f"{sel_snapshot['memory_pct']:.1f}%")
-            d2.metric("Active connections", sel_snapshot["connections"])
-            d3.metric("Disk used", f"{sel_snapshot['disk_used_gb']:.0f} / {sel_snapshot['disk_capacity_gb']} GB")
-            d3.metric("Disk IOPS", f"{sel_snapshot['iops']:,}")
+            with metric_col:
+                d1, d2, d3 = st.columns(3)
+                d1.metric("Status", sel_snapshot["status"])
+                d1.metric("CPU utilization", f"{sel_snapshot['cpu_pct']:.1f}%")
+                d2.metric("Memory utilization", f"{sel_snapshot['memory_pct']:.1f}%")
+                d2.metric("Active connections", sel_snapshot["connections"])
+                d3.metric("Disk used", f"{sel_snapshot['disk_used_gb']:.0f} / {sel_snapshot['disk_capacity_gb']} GB")
+                d3.metric("Disk IOPS", f"{sel_snapshot['iops']:,}")
 
-        tab1, tab2, tab3, tab4 = st.tabs(["Resource utilization", "Query latency and connections", "Replication", "Capacity planning"])
+            tab1, tab2, tab3, tab4 = st.tabs(["Resource utilization", "Query latency and connections", "Replication", "Capacity planning"])
 
-        with tab1:
-            if live_mode:
-                server_obj = next(s for s in servers if s["name"] == selected)
-                buffer_key = f"live_buffer_{client['code']}_{selected}"
+            with tab1:
+                if live_mode:
+                    server_obj = next(s for s in servers if s["name"] == selected)
+                    buffer_key = f"live_buffer_{client['code']}_{selected}"
 
-                @st.fragment(run_every=2)
-                def _live_resource_chart(server_obj=server_obj, buffer_key=buffer_key, base_seed=seed):
-                    if buffer_key not in st.session_state:
-                        seed_hist = tm.generate_history(server_obj, hours=2, jitter_seed=f"{base_seed}-live-seed").tail(30)
-                        st.session_state[buffer_key] = [
-                            {"timestamp": row.timestamp, "cpu_pct": float(row.cpu_pct),
-                             "memory_pct": float(row.memory_pct), "disk_pct": float(row.disk_pct)}
-                            for row in seed_hist.itertuples()
-                        ]
+                    @st.fragment(run_every=2)
+                    def _live_resource_chart(server_obj=server_obj, buffer_key=buffer_key, base_seed=seed):
+                        if buffer_key not in st.session_state:
+                            seed_hist = tm.generate_history(server_obj, hours=2, jitter_seed=f"{base_seed}-live-seed").tail(30)
+                            st.session_state[buffer_key] = [
+                                {"timestamp": row.timestamp, "cpu_pct": float(row.cpu_pct),
+                                 "memory_pct": float(row.memory_pct), "disk_pct": float(row.disk_pct)}
+                                for row in seed_hist.itertuples()
+                            ]
 
-                    buf = st.session_state[buffer_key]
-                    last = buf[-1]
-                    buf.append({
-                        "timestamp": pd.Timestamp.now(),
-                        "cpu_pct": min(99.0, max(1.0, last["cpu_pct"] + random.gauss(0, 4.5))),
-                        "memory_pct": min(97.0, max(5.0, last["memory_pct"] + random.gauss(0, 2.0))),
-                        "disk_pct": min(98.0, max(10.0, last["disk_pct"] + random.gauss(0, 0.4))),
-                    })
-                    if len(buf) > 36:
-                        buf.pop(0)
+                        buf = st.session_state[buffer_key]
+                        last = buf[-1]
+                        buf.append({
+                            "timestamp": pd.Timestamp.now(),
+                            "cpu_pct": min(99.0, max(1.0, last["cpu_pct"] + random.gauss(0, 4.5))),
+                            "memory_pct": min(97.0, max(5.0, last["memory_pct"] + random.gauss(0, 2.0))),
+                            "disk_pct": min(98.0, max(10.0, last["disk_pct"] + random.gauss(0, 0.4))),
+                        })
+                        if len(buf) > 36:
+                            buf.pop(0)
 
-                    live_df = pd.DataFrame(buf).set_index("timestamp")
-                    st.markdown(
-                        '<span class="live-indicator"><span class="live-dot"></span>LIVE</span>'
-                        f'&nbsp;<span style="color:#64748b; font-size:0.78rem;">streaming &middot; '
-                        f'CPU, memory and disk utilization (percent) &middot; updated {pd.Timestamp.now().strftime("%H:%M:%S")}</span>',
-                        unsafe_allow_html=True,
-                    )
-                    st.line_chart(live_df[["cpu_pct", "memory_pct", "disk_pct"]], height=320,
+                        live_df = pd.DataFrame(buf).set_index("timestamp")
+                        st.markdown(
+                            '<span class="live-indicator"><span class="live-dot"></span>LIVE</span>'
+                            f'&nbsp;<span style="color:#64748b; font-size:0.78rem;">streaming &middot; '
+                            f'CPU, memory and disk utilization (percent) &middot; updated {pd.Timestamp.now().strftime("%H:%M:%S")}</span>',
+                            unsafe_allow_html=True,
+                        )
+                        st.line_chart(live_df[["cpu_pct", "memory_pct", "disk_pct"]], height=320,
+                                      color=["#8b5cf6", "#22d3ee", "#34d399"])
+
+                    _live_resource_chart()
+                else:
+                    st.caption("CPU, memory and disk utilization (percent) over the selected window")
+                    st.line_chart(sel_history[["cpu_pct", "memory_pct", "disk_pct"]], height=320,
                                   color=["#8b5cf6", "#22d3ee", "#34d399"])
 
-                _live_resource_chart()
-            else:
-                st.caption("CPU, memory and disk utilization (percent) over the selected window")
-                st.line_chart(sel_history[["cpu_pct", "memory_pct", "disk_pct"]], height=320,
-                              color=["#8b5cf6", "#22d3ee", "#34d399"])
+            with tab2:
+                lc1, lc2 = st.columns(2)
+                with lc1:
+                    st.caption("Average query latency (milliseconds)")
+                    st.line_chart(sel_history[["query_latency_ms"]], height=280, color=["#22d3ee"])
+                with lc2:
+                    st.caption("Active connections")
+                    st.line_chart(sel_history[["connections"]], height=280, color=["#8b5cf6"])
+                st.caption("Disk I/O operations per second")
+                st.line_chart(sel_history[["iops"]], height=240, color=["#22d3ee"])
 
-        with tab2:
-            lc1, lc2 = st.columns(2)
-            with lc1:
-                st.caption("Average query latency (milliseconds)")
-                st.line_chart(sel_history[["query_latency_ms"]], height=280, color=["#22d3ee"])
-            with lc2:
-                st.caption("Active connections")
-                st.line_chart(sel_history[["connections"]], height=280, color=["#8b5cf6"])
-            st.caption("Disk I/O operations per second")
-            st.line_chart(sel_history[["iops"]], height=240, color=["#22d3ee"])
-
-        with tab3:
-            if sel_snapshot["role"] == "Replica":
-                st.caption("Replication lag relative to primary (seconds) — lower is better")
-                st.line_chart(sel_history[["replication_lag_s"]], height=300, color=["#8b5cf6"])
-                lag = sel_snapshot["replication_lag_s"]
-                if lag > 30:
-                    st.error(f"Replication lag is {lag:.2f}s, above the 30-second alerting threshold. Investigate primary load and network throughput.")
-                elif lag > 10:
-                    st.warning(f"Replication lag is {lag:.2f}s, approaching the alerting threshold.")
+            with tab3:
+                if sel_snapshot["role"] == "Replica":
+                    st.caption("Replication lag relative to primary (seconds) — lower is better")
+                    st.line_chart(sel_history[["replication_lag_s"]], height=300, color=["#8b5cf6"])
+                    lag = sel_snapshot["replication_lag_s"]
+                    if lag > 30:
+                        st.error(f"Replication lag is {lag:.2f}s, above the 30-second alerting threshold. Investigate primary load and network throughput.")
+                    elif lag > 10:
+                        st.warning(f"Replication lag is {lag:.2f}s, approaching the alerting threshold.")
+                    else:
+                        st.success(f"Replication lag is {lag:.2f}s, within normal operating range.")
                 else:
-                    st.success(f"Replication lag is {lag:.2f}s, within normal operating range.")
-            else:
-                st.info(f"{selected} operates as a {sel_snapshot['role']} node. Replication lag is tracked on its downstream replicas.")
+                    st.info(f"{selected} operates as a {sel_snapshot['role']} node. Replication lag is tracked on its downstream replicas.")
 
-        with tab4:
-            st.caption("Disk utilization trend and projected exhaustion based on the observed growth rate")
-            st.area_chart(sel_history[["disk_pct"]], height=280, color=["#22d3ee"])
-            used = sel_snapshot["disk_used_gb"]
-            capacity = sel_snapshot["disk_capacity_gb"]
-            free = capacity - used
-            cp1, cp2, cp3 = st.columns(3)
-            cp1.metric("Used", f"{used:.0f} GB")
-            cp2.metric("Free", f"{free:.0f} GB")
-            cp3.metric("Capacity", f"{capacity} GB")
-            if sel_snapshot["days_to_disk_full"] is not None:
-                if sel_snapshot["days_to_disk_full"] <= 30:
-                    st.warning(
-                        f"At the current growth rate, {selected} is projected to reach 95% disk utilization "
-                        f"in approximately {sel_snapshot['days_to_disk_full']} days. Plan a storage expansion or archival run."
-                    )
+            with tab4:
+                st.caption("Disk utilization trend and projected exhaustion based on the observed growth rate")
+                st.area_chart(sel_history[["disk_pct"]], height=280, color=["#22d3ee"])
+                used = sel_snapshot["disk_used_gb"]
+                capacity = sel_snapshot["disk_capacity_gb"]
+                free = capacity - used
+                cp1, cp2, cp3 = st.columns(3)
+                cp1.metric("Used", f"{used:.0f} GB")
+                cp2.metric("Free", f"{free:.0f} GB")
+                cp3.metric("Capacity", f"{capacity} GB")
+                if sel_snapshot["days_to_disk_full"] is not None:
+                    if sel_snapshot["days_to_disk_full"] <= 30:
+                        st.warning(
+                            f"At the current growth rate, {selected} is projected to reach 95% disk utilization "
+                            f"in approximately {sel_snapshot['days_to_disk_full']} days. Plan a storage expansion or archival run."
+                        )
+                    else:
+                        st.info(
+                            f"At the current growth rate, {selected} is projected to reach 95% disk utilization "
+                            f"in approximately {sel_snapshot['days_to_disk_full']} days."
+                        )
                 else:
-                    st.info(
-                        f"At the current growth rate, {selected} is projected to reach 95% disk utilization "
-                        f"in approximately {sel_snapshot['days_to_disk_full']} days."
-                    )
-            else:
-                st.success(f"Disk utilization on {selected} is stable; no near-term capacity action required.")
+                    st.success(f"Disk utilization on {selected} is stable; no near-term capacity action required.")
 
 # ---- Alerts & incidents -------------------------------------------------------
-with nav_alerts:
+with tab_map["Alerts & incidents"]:
     with st.container(border=True):
         info_card(
             title="Alerts &amp; Incidents",
@@ -1004,81 +1014,83 @@ with nav_alerts:
                     st.toast(f"{jump_target} preselected — open the Server detail tab to inspect it.", icon=":material/north_east:")
 
 # ---- Backups & maintenance -----------------------------------------------------
-with nav_ops:
-    info_card(
-        title="Backups &amp; Maintenance",
-        note="This is the safety net — proof that every server has a recoverable backup and that upcoming "
-             "change windows are scheduled and resourced. A failed backup that goes unnoticed here is the "
-             "kind of gap that turns a routine incident into permanent data loss, and an unplanned "
-             "maintenance clash can take down a host that was otherwise healthy.",
-    )
-    left, right = st.columns(2, gap="medium")
+if "Backups & maintenance" in tab_map:
+    with tab_map["Backups & maintenance"]:
+        info_card(
+            title="Backups &amp; Maintenance",
+            note="This is the safety net — proof that every server has a recoverable backup and that upcoming "
+                 "change windows are scheduled and resourced. A failed backup that goes unnoticed here is the "
+                 "kind of gap that turns a routine incident into permanent data loss, and an unplanned "
+                 "maintenance clash can take down a host that was otherwise healthy.",
+        )
+        left, right = st.columns(2, gap="medium")
 
-    with left:
-        with st.container(border=True):
-            st.markdown("**Backup job history**")
-            backup_servers = st.multiselect("Filter by server", options=server_names, default=server_names, key="backup_filter")
-            shown_backups = backups[backups["server"].isin(backup_servers)].copy()
+        with left:
+            with st.container(border=True):
+                st.markdown("**Backup job history**")
+                backup_servers = st.multiselect("Filter by server", options=server_names, default=server_names, key="backup_filter")
+                shown_backups = backups[backups["server"].isin(backup_servers)].copy()
 
-            display_backups = pd.DataFrame({
-                "Run time": shown_backups["timestamp"].apply(fmt_dt),
-                "Server": shown_backups["server"],
-                "Type": shown_backups["type"],
-                "Result": shown_backups["result"],
-                "Duration": shown_backups["duration_min"].astype(str) + " min",
-                "Size": shown_backups["size_gb"].astype(str) + " GB",
-            })
+                display_backups = pd.DataFrame({
+                    "Run time": shown_backups["timestamp"].apply(fmt_dt),
+                    "Server": shown_backups["server"],
+                    "Type": shown_backups["type"],
+                    "Result": shown_backups["result"],
+                    "Duration": shown_backups["duration_min"].astype(str) + " min",
+                    "Size": shown_backups["size_gb"].astype(str) + " GB",
+                })
 
-            styled_backups = display_backups.style.map(text_cell(RESULT_STYLE), subset=["Result"])
-            st.dataframe(styled_backups, width="stretch", hide_index=True, height=360)
+                styled_backups = display_backups.style.map(text_cell(RESULT_STYLE), subset=["Result"])
+                st.dataframe(styled_backups, width="stretch", hide_index=True, height=360)
 
-            failed = int((shown_backups["result"] == "Failed").sum())
-            if failed:
-                st.warning(f"{failed} backup job(s) reported a failure in the displayed range. Review job logs and re-run as needed.")
-            else:
-                st.success("All displayed backup jobs completed successfully.")
+                failed = int((shown_backups["result"] == "Failed").sum())
+                if failed:
+                    st.warning(f"{failed} backup job(s) reported a failure in the displayed range. Review job logs and re-run as needed.")
+                else:
+                    st.success("All displayed backup jobs completed successfully.")
 
-    with right:
-        with st.container(border=True):
-            st.markdown("**Scheduled maintenance**")
-            display_maintenance = pd.DataFrame({
-                "Scheduled for": maintenance["scheduled_for"].apply(fmt_dt),
-                "Server": maintenance["server"],
-                "Description": maintenance["description"],
-                "Duration": maintenance["duration_hours"].astype(str) + " hr",
-                "Owner": maintenance["owner"],
-                "Change ticket": maintenance["change_ticket"],
-            })
-            st.dataframe(display_maintenance, width="stretch", hide_index=True, height=360)
-            st.caption("Entries are drawn from the change-management calendar.")
+        with right:
+            with st.container(border=True):
+                st.markdown("**Scheduled maintenance**")
+                display_maintenance = pd.DataFrame({
+                    "Scheduled for": maintenance["scheduled_for"].apply(fmt_dt),
+                    "Server": maintenance["server"],
+                    "Description": maintenance["description"],
+                    "Duration": maintenance["duration_hours"].astype(str) + " hr",
+                    "Owner": maintenance["owner"],
+                    "Change ticket": maintenance["change_ticket"],
+                })
+                st.dataframe(display_maintenance, width="stretch", hide_index=True, height=360)
+                st.caption("Entries are drawn from the change-management calendar.")
 
 # ---- Toolkit --------------------------------------------------------------------
-with nav_toolkit:
-    with st.container(border=True):
-        info_card(
-            title="Operations Toolkit",
-            note="A quick-launch directory of the external platforms the team relies on for development, "
-                 "administration, monitoring and infrastructure delivery — handy mainly for moving fast "
-                 "during a live incident, when hunting for the right tool's URL is time better spent on "
-                 "the actual fix.",
-        )
-        toolkit_categories = sorted({t["category"] for t in TOOLKIT})
-        selected_categories = st.multiselect("Filter by category", options=toolkit_categories, default=toolkit_categories)
-        shown_tools = [t for t in TOOLKIT if t["category"] in selected_categories]
-
-        if not shown_tools:
-            st.info("No tools match the selected categories — pick at least one category above.")
-        else:
-            cards_html = "".join(
-                f"""<div class="tool-card">
-                    <div class="tool-name"><a href="{t['url']}" target="_blank" rel="noopener noreferrer">{t['name']}</a></div>
-                    <span class="tool-cat">{t['category']}</span>
-                    <div class="tool-desc">{t['description']}</div>
-                </div>"""
-                for t in shown_tools
+if "Toolkit" in tab_map:
+    with tab_map["Toolkit"]:
+        with st.container(border=True):
+            info_card(
+                title="Operations Toolkit",
+                note="A quick-launch directory of the external platforms the team relies on for development, "
+                     "administration, monitoring and infrastructure delivery — handy mainly for moving fast "
+                     "during a live incident, when hunting for the right tool's URL is time better spent on "
+                     "the actual fix.",
             )
-            st.markdown(f'<div class="tool-grid">{cards_html}</div>', unsafe_allow_html=True)
-            st.caption(f"Showing {len(shown_tools)} of {len(TOOLKIT)} reference tools.")
+            toolkit_categories = sorted({t["category"] for t in TOOLKIT})
+            selected_categories = st.multiselect("Filter by category", options=toolkit_categories, default=toolkit_categories)
+            shown_tools = [t for t in TOOLKIT if t["category"] in selected_categories]
+
+            if not shown_tools:
+                st.info("No tools match the selected categories — pick at least one category above.")
+            else:
+                cards_html = "".join(
+                    f"""<div class="tool-card">
+                        <div class="tool-name"><a href="{t['url']}" target="_blank" rel="noopener noreferrer">{t['name']}</a></div>
+                        <span class="tool-cat">{t['category']}</span>
+                        <div class="tool-desc">{t['description']}</div>
+                    </div>"""
+                    for t in shown_tools
+                )
+                st.markdown(f'<div class="tool-grid">{cards_html}</div>', unsafe_allow_html=True)
+                st.caption(f"Showing {len(shown_tools)} of {len(TOOLKIT)} reference tools.")
 
 st.write("")
 st.caption(
