@@ -1856,7 +1856,7 @@ def view_server_maint(*, client, snapshots, servers, seed, role, **_):
             })
         patch_df = pd.DataFrame(patch_rows)
         st.dataframe(
-            patch_df.style.applymap(lambda v: "color:#22c55e;font-weight:600;" if v == "Up to date" else ("color:#f59e0b;font-weight:600;" if v == "Patch available" else ""), subset=["Patch Status"]),
+            patch_df.style.map(lambda v: "color:#22c55e;font-weight:600;" if v == "Up to date" else ("color:#f59e0b;font-weight:600;" if v == "Patch available" else ""), subset=["Patch Status"]),
             use_container_width=True, hide_index=True,
         )
         needs_patch = sum(1 for r in patch_rows if r["Patch Status"] == "Patch available")
@@ -1966,7 +1966,7 @@ def view_asset_mgmt(*, client, snapshots, servers, seed, role, **_):
             })
         lic_df = pd.DataFrame(lic_rows)
         st.dataframe(
-            lic_df.style.applymap(lambda v: "color:#ef4444;font-weight:600;" if v == "Expired" else ("color:#f59e0b;font-weight:600;" if v == "Expiring Soon" else "color:#22c55e;font-weight:600;" if v == "Active" else ""), subset=["Status"]),
+            lic_df.style.map(lambda v: "color:#ef4444;font-weight:600;" if v == "Expired" else ("color:#f59e0b;font-weight:600;" if v == "Expiring Soon" else "color:#22c55e;font-weight:600;" if v == "Active" else ""), subset=["Status"]),
             use_container_width=True, hide_index=True,
         )
 
@@ -1989,7 +1989,7 @@ def view_asset_mgmt(*, client, snapshots, servers, seed, role, **_):
             })
         lc_df = pd.DataFrame(lc_rows)
         st.dataframe(
-            lc_df.style.applymap(lambda v: "color:#ef4444;font-weight:600;" if v == "Critical" else ("color:#f59e0b;font-weight:600;" if v == "Warning" else "color:#22c55e;" if v == "Good" else ""), subset=["Health"]),
+            lc_df.style.map(lambda v: "color:#ef4444;font-weight:600;" if v == "Critical" else ("color:#f59e0b;font-weight:600;" if v == "Warning" else "color:#22c55e;" if v == "Good" else ""), subset=["Health"]),
             use_container_width=True, hide_index=True,
         )
         st.caption("Servers with Days to EOL < 180 are highlighted Critical; < 365 are Warning.")
@@ -2499,7 +2499,8 @@ def view_ops_reporting(*, client, snapshots, alerts, backups, seed, role, **_):
     tabs = st.tabs(["KPI Dashboard", "Fleet Reports", "Trend Analysis", "Export Center"])
 
     now = datetime.now()
-    avg_uptime = round(sum(s.get("uptime_pct_30d", 99.0) for s in snapshots) / max(len(snapshots), 1), 2)
+    _snaps = [s for s in snapshots if isinstance(s, dict)]
+    avg_uptime = round(sum(s.get("uptime_pct_30d", 99.0) for s in _snaps) / max(len(_snaps), 1), 2)
     mttr_h = round(rng.uniform(0.5, 4.2), 1)
     backup_success_rate = round(rng.uniform(94.0, 99.9), 1)
     # alerts is a DataFrame — use vectorised operations
@@ -2515,11 +2516,11 @@ def view_ops_reporting(*, client, snapshots, alerts, backups, seed, role, **_):
         mini1, mini2, mini3 = st.columns(3)
         with mini1:
             st.markdown("**Top 3 by Latency**")
-            top_lat = sorted(snapshots, key=lambda s: s.get("query_latency_ms", 0), reverse=True)[:3]
+            top_lat = sorted(_snaps, key=lambda s: s.get("query_latency_ms", 0), reverse=True)[:3]
             st.dataframe(pd.DataFrame([{"Server": s["name"], "Latency (ms)": f"{s.get('query_latency_ms', 0):.1f}"} for s in top_lat]), use_container_width=True, hide_index=True)
         with mini2:
             st.markdown("**Top 3 by Disk Usage**")
-            top_disk = sorted(snapshots, key=lambda s: s.get("disk_pct", 0), reverse=True)[:3]
+            top_disk = sorted(_snaps, key=lambda s: s.get("disk_pct", 0), reverse=True)[:3]
             st.dataframe(pd.DataFrame([{"Server": s["name"], "Disk %": f"{s.get('disk_pct', 0):.1f}"} for s in top_disk]), use_container_width=True, hide_index=True)
         with mini3:
             st.markdown("**Recent 3 Alerts**")
@@ -2546,13 +2547,13 @@ def view_ops_reporting(*, client, snapshots, alerts, backups, seed, role, **_):
                     st.caption(f"Last generated: {last_gen}")
                 with rc2:
                     if title == "Fleet Health Summary":
-                        csv_data = pd.DataFrame([{k: s.get(k, "—") for k in ["name", "db_type", "role", "region", "status", "cpu_pct", "mem_pct", "disk_pct", "uptime_pct_30d"]} for s in snapshots]).to_csv(index=False)
+                        csv_data = pd.DataFrame([{k: s.get(k, "—") for k in ["name", "db_type", "role", "region", "status", "cpu_pct", "mem_pct", "disk_pct", "uptime_pct_30d"]} for s in _snaps]).to_csv(index=False)
                     elif title == "Backup Coverage Report":
                         csv_data = (backups.to_csv(index=False) if (hasattr(backups, "to_csv") and not backups.empty) else "server,status,timestamp\n")
                     elif title == "Alert Activity Report":
                         csv_data = (alerts.to_csv(index=False) if (hasattr(alerts, "to_csv") and not alerts.empty) else "server,severity,status\n")
                     else:
-                        csv_data = pd.DataFrame([{"Server": s["name"], "CPU %": s.get("cpu_pct"), "Mem %": s.get("mem_pct"), "Disk %": s.get("disk_pct")} for s in snapshots]).to_csv(index=False)
+                        csv_data = pd.DataFrame([{"Server": s["name"], "CPU %": s.get("cpu_pct"), "Mem %": s.get("mem_pct"), "Disk %": s.get("disk_pct")} for s in _snaps]).to_csv(index=False)
                     st.download_button("Download CSV", data=csv_data, file_name=f"{title.lower().replace(' ', '_')}.csv", mime="text/csv", key=f"rpt_{title[:8]}")
                 st.markdown('<hr style="border-color:#1e293b;margin:8px 0;">', unsafe_allow_html=True)
 
@@ -2563,9 +2564,9 @@ def view_ops_reporting(*, client, snapshots, alerts, backups, seed, role, **_):
         TRENDS = [
             ("Fleet Availability",    f"{avg_uptime}%",   rng.choice(["↑", "↑", "→"]), "#22c55e"),
             ("Alert Volume",          str(alert_count),   rng.choice(["↓", "↓", "→"]), "#22c55e"),
-            ("Avg Query Latency",     f"{round(sum(s.get('query_latency_ms', 0) for s in snapshots)/max(len(snapshots),1), 1)} ms", rng.choice(["↑", "→", "↓"]), "#f59e0b"),
+            ("Avg Query Latency",     f"{round(sum(s.get('query_latency_ms', 0) for s in _snaps)/max(len(_snaps),1), 1)} ms", rng.choice(["↑", "→", "↓"]), "#f59e0b"),
             ("Backup Success Rate",   f"{backup_success_rate}%", rng.choice(["↑", "→"]), "#22c55e"),
-            ("Avg Disk Utilisation",  f"{round(sum(s.get('disk_pct', 0) for s in snapshots)/max(len(snapshots),1), 1)}%", rng.choice(["↑", "→"]), "#f59e0b"),
+            ("Avg Disk Utilisation",  f"{round(sum(s.get('disk_pct', 0) for s in _snaps)/max(len(_snaps),1), 1)}%", rng.choice(["↑", "→"]), "#f59e0b"),
             ("Open Incidents",        str(active_incidents), rng.choice(["↓", "→", "↑"]), "#ef4444" if active_incidents > 3 else "#22c55e"),
         ]
         for metric, value, arrow, color in TRENDS:
@@ -2577,7 +2578,7 @@ def view_ops_reporting(*, client, snapshots, alerts, backups, seed, role, **_):
         st.caption("Download raw CSV exports for use in external reporting tools.")
         e1, e2, e3 = st.columns(3)
         with e1:
-            fleet_csv = pd.DataFrame([{k: s.get(k, "—") for k in ["name", "db_type", "role", "region", "status", "cpu_pct", "mem_pct", "disk_pct", "query_latency_ms", "active_connections", "replication_lag_s", "uptime_pct_30d"]} for s in snapshots]).to_csv(index=False)
+            fleet_csv = pd.DataFrame([{k: s.get(k, "—") for k in ["name", "db_type", "role", "region", "status", "cpu_pct", "memory_pct", "disk_pct", "query_latency_ms", "connections", "replication_lag_s", "uptime_pct_30d"]} for s in _snaps]).to_csv(index=False)
             st.download_button("Full Fleet Export CSV", data=fleet_csv, file_name="fleet_export.csv", mime="text/csv", use_container_width=True)
             st.caption(f"{len(snapshots)} servers")
         with e2:
