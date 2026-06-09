@@ -36,12 +36,17 @@ CHANNELS = [
 
 
 def _load() -> dict:
+    base = {k: (v.copy() if isinstance(v, (dict, list)) else v) for k, v in _DEFAULT.items()}
     if _STORE_PATH.exists():
         try:
-            return json.loads(_STORE_PATH.read_text(encoding="utf-8"))
+            data = json.loads(_STORE_PATH.read_text(encoding="utf-8"))
+            # Merge: add any new top-level keys introduced after the file was written
+            for k, v in base.items():
+                data.setdefault(k, v)
+            return data
         except Exception:
             pass
-    return {k: (v.copy() if isinstance(v, (dict, list)) else v) for k, v in _DEFAULT.items()}
+    return base
 
 
 def _save(data: dict) -> None:
