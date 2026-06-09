@@ -230,6 +230,42 @@ div[data-testid="stExpander"] summary { color: #94a3b8 !important; font-weight: 
 .tool-card .tool-cat { display: inline-block; margin-top: 4px; padding: 1px 8px; border-radius: 2em; font-size: 0.64rem; font-weight: 700; letter-spacing: 0.05em; background: rgba(148,163,184,0.09); color: #334155; border: 1px solid rgba(148,163,184,0.18); }
 .tool-card .tool-desc { color: #334155; font-size: 0.78rem; margin-top: 7px; line-height: 1.45; }
 
+/* ── Sidebar nav items ────────────────────────────────────────────── */
+.nav-group-label {
+    color: #1a2535; font-size: 0.59rem; font-weight: 700; letter-spacing: 0.17em;
+    text-transform: uppercase; padding: 14px 4px 3px; line-height: 1;
+}
+section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] > div > div[data-testid="stButton"] {
+    margin: 1px 0 !important;
+}
+section[data-testid="stSidebar"] .stButton > button {
+    background: transparent !important; border-color: transparent !important;
+    border-left: 2px solid transparent !important; border-radius: 5px !important;
+    color: #475569 !important; font-size: 0.82rem !important; font-weight: 500 !important;
+    padding: 5px 10px 5px 10px !important; text-align: left !important;
+    justify-content: flex-start !important; letter-spacing: 0.005em !important;
+    line-height: 1.4 !important;
+}
+section[data-testid="stSidebar"] .stButton > button:hover {
+    background: rgba(255,255,255,0.04) !important;
+    border-left-color: rgba(34,211,238,0.22) !important; color: #64748b !important;
+}
+section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+    background: rgba(34,211,238,0.07) !important;
+    border-left-color: #22d3ee !important; border-right-color: transparent !important;
+    border-top-color: transparent !important; border-bottom-color: transparent !important;
+    color: #e2e8f0 !important; font-weight: 600 !important; box-shadow: none !important;
+}
+section[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
+    background: rgba(34,211,238,0.1) !important; color: #f1f5f9 !important;
+}
+section[data-testid="stSidebar"] .stButton > button[kind="tertiary"] {
+    color: #334155 !important; font-size: 0.79rem !important;
+}
+section[data-testid="stSidebar"] .stButton > button[kind="tertiary"]:hover {
+    background: rgba(255,255,255,0.04) !important; color: #64748b !important;
+}
+
 /* ── Login ─────────────────────────────────────────────────────────── */
 .login-brand { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 6px; }
 .login-logo { width: 52px; height: 52px; border-radius: 12px; }
@@ -369,6 +405,33 @@ def report_issue_dialog():
 # ---------------------------------------------------------------------------
 if "jitter_seed" not in st.session_state:
     st.session_state.jitter_seed = 0
+if "active_module" not in st.session_state:
+    st.session_state.active_module = "overview"
+
+_NAV = [
+    ("DASHBOARD",      [("overview",        "Overview")]),
+    ("INFRASTRUCTURE", [("server-maint",    "Server Maintenance"),
+                        ("asset-mgmt",      "Asset Management")]),
+    ("DEVELOPMENT",    [("website-dev",     "Website Development"),
+                        ("bug-performance", "Bug & Performance")]),
+    ("COORDINATION",   [("uiux-infra",      "UI/UX & Infrastructure"),
+                        ("client-support",  "Client Support"),
+                        ("workflow-docs",   "Workflow Docs")]),
+    ("REPORTING",      [("ops-reporting",   "Operational Reporting")]),
+    ("COMMUNICATION",  [("channels-page",   "Channels")]),
+]
+
+_MODULE_VIEW = {
+    "server-maint":    views.view_server_maint,
+    "asset-mgmt":      views.view_asset_mgmt,
+    "website-dev":     views.view_website_dev,
+    "bug-performance": views.view_bug_perf,
+    "uiux-infra":      views.view_uiux_infra,
+    "client-support":  views.view_client_support_module,
+    "workflow-docs":   views.view_workflow_docs,
+    "ops-reporting":   views.view_ops_reporting,
+    "channels-page":   views.view_channels_page,
+}
 
 TIER_PILL_CLASS = {"Enterprise": "tier-ent", "Mid-Market": "tier-mid", "Growth": "tier-grw"}
 
@@ -429,6 +492,20 @@ with st.sidebar:
         options=sorted({s["region"] for s in fleet_template}),
         default=sorted({s["region"] for s in fleet_template}),
     )
+
+    st.markdown('<div class="sb-section">Navigation</div>', unsafe_allow_html=True)
+    for group_label, items in _NAV:
+        st.markdown(f'<div class="nav-group-label">{group_label}</div>', unsafe_allow_html=True)
+        for mod_id, mod_label in items:
+            is_active = st.session_state.active_module == mod_id
+            if st.button(
+                mod_label,
+                key=f"nav_{mod_id}",
+                type="primary" if is_active else "secondary",
+                use_container_width=True,
+            ):
+                st.session_state.active_module = mod_id
+                st.rerun()
 
     st.markdown('<div class="sb-section">Session</div>', unsafe_allow_html=True)
     st.markdown(
@@ -539,20 +616,31 @@ with hero_metrics:
 st.write("")
 
 # ---------------------------------------------------------------------------
-# Role dispatch — each role gets its own purpose-built view
+# Role / module dispatch
 # ---------------------------------------------------------------------------
 store.get()
 _role = ACCOUNTS.get(st.session_state.auth_user, "")
-_view_fn = views.ROLE_VIEW.get(_role)
-if _view_fn:
-    _view_fn(
-        client=client, snapshots=snapshots, alerts=alerts,
-        backups=backups, maintenance=maintenance, histories=histories,
-        servers=servers, seed=seed, live_mode=live_mode,
-        server_names=server_names, window_hours=window_hours,
-    )
+_mod  = st.session_state.active_module
+
+_base_kw = dict(
+    client=client, snapshots=snapshots, alerts=alerts,
+    backups=backups, maintenance=maintenance, histories=histories,
+    servers=servers, seed=seed, live_mode=live_mode,
+    server_names=server_names, window_hours=window_hours,
+)
+
+if _mod == "overview":
+    _view_fn = views.ROLE_VIEW.get(_role)
+    if _view_fn:
+        _view_fn(**_base_kw)
+    else:
+        st.warning(f"No view configured for role '{_role}'. Contact your administrator.")
 else:
-    st.warning(f"No view configured for role '{_role}'. Contact your administrator.")
+    _mod_fn = _MODULE_VIEW.get(_mod)
+    if _mod_fn:
+        _mod_fn(**_base_kw, role=_role)
+    else:
+        st.warning(f"Module '{_mod}' not found.")
 
 st.write("")
 st.caption(

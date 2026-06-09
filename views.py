@@ -1799,6 +1799,798 @@ def view_data_analyst(client, snapshots, alerts, backups, maintenance,
 
 
 # ============================================================
+# NEW ROLE VIEWS
+# ============================================================
+
+def view_server_maint(*, client, snapshots, servers, seed, role, **_):
+    info_card(
+        "Server Maintenance & Patch Management",
+        "Schedule maintenance windows, track patch levels, log changes and manage planned downtime.",
+    )
+    rng = random.Random(abs(hash(seed)) % 2 ** 32)
+    tabs = st.tabs(["Scheduled Windows", "Patch Tracker", "Create Window", "Change Log"])
+
+    with tabs[0]:
+        windows = store.get().get("maint_windows", [])
+        active_wins = [w for w in windows if w.get("status") not in ("Completed", "Cancelled")]
+        if not active_wins:
+            st.markdown(
+                '<div style="padding:32px;text-align:center;color:#475569;'
+                'background:rgba(15,23,42,0.6);border-radius:10px;border:1px solid #1e293b;">'
+                'No scheduled maintenance windows. Use the <b>Create Window</b> tab to schedule one.</div>',
+                unsafe_allow_html=True,
+            )
+        for w in active_wins:
+            status_color = {"Scheduled": "#22d3ee", "In Progress": "#f59e0b", "Completed": "#22c55e", "Cancelled": "#475569"}.get(w.get("status", ""), "#475569")
+            with st.expander(f"🔧 {w.get('title', 'Untitled')} — {w.get('change_type', '')}  [{w.get('status', '')}]", expanded=False):
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown(f"**ID:** `{w.get('id', '—')}`")
+                    st.markdown(f"**Type:** {w.get('change_type', '—')}")
+                    st.markdown(f"**Owner:** {w.get('owner', '—')}")
+                    st.markdown(f"**Start:** {w.get('start', '—')}")
+                    st.markdown(f"**End:** {w.get('end', '—')}")
+                with c2:
+                    st.markdown(f"**Affected Servers:** {', '.join(w.get('server_list', [])) or '—'}")
+                    st.markdown(f"**Created by:** {w.get('created_by', '—')}")
+                    st.markdown(f"**Description:** {w.get('description', '—')}")
+                new_status = st.selectbox("Update status", ["Scheduled", "In Progress", "Completed", "Cancelled"], key=f"mw_status_{w.get('id')}", index=["Scheduled", "In Progress", "Completed", "Cancelled"].index(w.get("status", "Scheduled")) if w.get("status") in ["Scheduled", "In Progress", "Completed", "Cancelled"] else 0)
+                if st.button("Apply Status", key=f"mw_apply_{w.get('id')}", type="primary"):
+                    store.update_maint_window(w["id"], status=new_status)
+                    st.success(f"Status updated to **{new_status}**.")
+                    st.rerun()
+
+    with tabs[1]:
+        DB_VERSIONS = {"PostgreSQL": ("15.4", "16.2"), "MySQL": ("8.0.33", "8.0.37"), "MongoDB": ("6.0.8", "7.0.4"), "Redis": ("7.0.12", "7.2.3"), "MariaDB": ("10.11.4", "11.2.2")}
+        patch_rows = []
+        for s in snapshots:
+            db = s.get("db_type", "PostgreSQL")
+            cur_ver, latest_ver = DB_VERSIONS.get(db, ("—", "—"))
+            up_to_date = rng.random() > 0.35
+            patch_rows.append({
+                "Server": s["name"], "DB Type": db, "Region": s.get("region", "—"),
+                "Current Version": cur_ver if up_to_date else cur_ver.rsplit(".", 1)[0] + f".{rng.randint(0, int(cur_ver.rsplit('.', 1)[-1]) - 1)}",
+                "Latest Version": latest_ver,
+                "Patch Status": "Up to date" if up_to_date else "Patch available",
+                "Last Checked": (datetime.now() - timedelta(hours=rng.randint(1, 48))).strftime("%Y-%m-%d %H:%M"),
+            })
+        patch_df = pd.DataFrame(patch_rows)
+        st.dataframe(
+            patch_df.style.applymap(lambda v: "color:#22c55e;font-weight:600;" if v == "Up to date" else ("color:#f59e0b;font-weight:600;" if v == "Patch available" else ""), subset=["Patch Status"]),
+            use_container_width=True, hide_index=True,
+        )
+        needs_patch = sum(1 for r in patch_rows if r["Patch Status"] == "Patch available")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total Servers", len(patch_rows))
+        c2.metric("Up to Date", len(patch_rows) - needs_patch)
+        c3.metric("Patch Available", needs_patch, delta=f"{needs_patch} pending" if needs_patch else None, delta_color="inverse")
+
+    with tabs[2]:
+        server_names = [s["name"] for s in servers] if servers else [s["name"] for s in snapshots]
+        with st.form("create_maint_window_form", clear_on_submit=True):
+            st.markdown("#### Schedule New Maintenance Window")
+            title = st.text_input("Title *", placeholder="e.g. PostgreSQL minor version patch")
+            change_type = st.selectbox("Change Type", ["Standard", "Emergency", "Normal", "Expedited"])
+            affected = st.multiselect("Affected Servers", server_names)
+            col_s, col_e = st.columns(2)
+            with col_s:
+                start_str = st.text_input("Start (YYYY-MM-DD HH:MM)", placeholder="2026-06-15 02:00")
+            with col_e:
+                end_str = st.text_input("End (YYYY-MM-DD HH:MM)", placeholder="2026-06-15 04:00")
+            description = st.text_area("Description / Scope of Work", height=100)
+            submitted = st.form_submit_button("Create Window", type="primary")
+            if submitted:
+                if not title or not start_str or not end_str:
+                    st.error("Title, Start and End are required.")
+                else:
+                    store.create_maint_window(title, description, start_str, end_str, affected, role, change_type, role)
+                    st.success(f"Maintenance window **{title}** scheduled successfully.")
+
+    with tabs[3]:
+        all_wins = store.get().get("maint_windows", [])
+        closed = [w for w in all_wins if w.get("status") in ("Completed", "Cancelled")]
+        if not closed:
+            st.info("No completed or cancelled windows in the change log yet.")
+        else:
+            log_df = pd.DataFrame([{
+                "ID": w.get("id", "—"), "Title": w.get("title", "—"),
+                "Type": w.get("change_type", "—"), "Owner": w.get("owner", "—"),
+                "Start": w.get("start", "—"), "End": w.get("end", "—"),
+                "Status": w.get("status", "—"), "Servers": ", ".join(w.get("server_list", [])),
+            } for w in closed])
+            st.dataframe(log_df, use_container_width=True, hide_index=True)
+
+
+def view_asset_mgmt(*, client, snapshots, servers, seed, role, **_):
+    info_card(
+        "Asset & Infrastructure Registry",
+        "Full visibility into fleet inventory, hardware specs, software licences and server lifecycle status.",
+    )
+    rng = random.Random(abs(hash(seed)) % 2 ** 32)
+    tabs = st.tabs(["Fleet Inventory", "Hardware Specs", "License Registry", "Lifecycle"])
+
+    with tabs[0]:
+        fleet_rows = []
+        for s in snapshots:
+            status_emoji = {"Healthy": "🟢", "Warning": "🟡", "Critical": "🔴"}.get(s.get("status", ""), "⚪")
+            fleet_rows.append({
+                "Server": s["name"], "DB Type": s.get("db_type", "—"), "Role": s.get("role", "—"),
+                "Region": s.get("region", "—"),
+                "Status": s.get("status", "—"),
+                "CPU %": f"{s.get('cpu_pct', 0):.1f}",
+                "Mem %": f"{s.get('mem_pct', 0):.1f}",
+                "Disk %": f"{s.get('disk_pct', 0):.1f}",
+                "Connections": s.get("active_connections", 0),
+                "Uptime 30d %": f"{s.get('uptime_pct_30d', 0):.2f}",
+            })
+        fleet_df = pd.DataFrame(fleet_rows)
+        st.dataframe(
+            fleet_df.style.applymap(badge_cell(STATUS_STYLE), subset=["Status"]),
+            use_container_width=True, hide_index=True,
+        )
+        ca, cb, cc, cd = st.columns(4)
+        ca.metric("Total Assets", len(fleet_rows))
+        cb.metric("Healthy", sum(1 for r in fleet_rows if r["Status"] == "Healthy"))
+        cc.metric("Warning", sum(1 for r in fleet_rows if r["Status"] == "Warning"))
+        cd.metric("Critical", sum(1 for r in fleet_rows if r["Status"] == "Critical"))
+
+    with tabs[1]:
+        hw_rows = []
+        datacenters = ["us-east-1a", "us-west-2b", "eu-west-1a", "ap-southeast-1b", "ca-central-1a"]
+        for s in snapshots:
+            hw_rows.append({
+                "Server": s["name"], "DB Type": s.get("db_type", "—"),
+                "CPU Cores": rng.choice([8, 16, 32, 64]),
+                "RAM (GB)": rng.choice([32, 64, 128, 256]),
+                "Disk (TB)": round(rng.uniform(1.0, 20.0), 1),
+                "Network": rng.choice(["1 Gbps", "10 Gbps", "25 Gbps"]),
+                "Datacenter": rng.choice(datacenters),
+                "Hypervisor": rng.choice(["VMware ESXi 8", "KVM", "AWS Nitro", "Bare Metal"]),
+            })
+        st.dataframe(pd.DataFrame(hw_rows), use_container_width=True, hide_index=True)
+
+    with tabs[2]:
+        vendors = ["HashiCorp", "Oracle", "Red Hat", "Elastic", "DataStax", "Percona", "VMware", "Veeam", "PagerDuty", "Datadog"]
+        products = ["Vault Enterprise", "Oracle DB SE2", "RHEL Server", "Elasticsearch Enterprise", "DataStax Astra", "Percona XtraDB", "vSphere", "Backup & Replication", "PagerDuty Teams", "Datadog APM"]
+        lic_rows = []
+        for i in range(10):
+            expiry_days = rng.randint(-30, 400)
+            expiry_date = (datetime.now() + timedelta(days=expiry_days)).strftime("%Y-%m-%d")
+            lic_rows.append({
+                "Product": products[i], "Vendor": vendors[i],
+                "Type": rng.choice(["Perpetual", "Annual Subscription", "Monthly SaaS", "Per-core"]),
+                "Seats / Units": rng.randint(5, 200),
+                "Expiry": expiry_date,
+                "Cost/yr ($)": f"{rng.randint(2000, 85000):,}",
+                "Status": "Expired" if expiry_days < 0 else ("Expiring Soon" if expiry_days < 60 else "Active"),
+            })
+        lic_df = pd.DataFrame(lic_rows)
+        st.dataframe(
+            lic_df.style.applymap(lambda v: "color:#ef4444;font-weight:600;" if v == "Expired" else ("color:#f59e0b;font-weight:600;" if v == "Expiring Soon" else "color:#22c55e;font-weight:600;" if v == "Active" else ""), subset=["Status"]),
+            use_container_width=True, hide_index=True,
+        )
+
+    with tabs[3]:
+        lc_rows = []
+        for s in snapshots:
+            purchase_date = datetime.now() - timedelta(days=rng.randint(365, 1825))
+            warranty_exp = purchase_date + timedelta(days=rng.randint(730, 1460))
+            eol_date = purchase_date + timedelta(days=rng.randint(1825, 3650))
+            replacement = eol_date - timedelta(days=rng.randint(180, 365))
+            days_to_eol = (eol_date - datetime.now()).days
+            lc_rows.append({
+                "Server": s["name"], "DB Type": s.get("db_type", "—"),
+                "Purchase Date": purchase_date.strftime("%Y-%m-%d"),
+                "Warranty Expiry": warranty_exp.strftime("%Y-%m-%d"),
+                "EOL Date": eol_date.strftime("%Y-%m-%d"),
+                "Planned Replacement": replacement.strftime("%Y-%m-%d"),
+                "Days to EOL": days_to_eol,
+                "Health": "Critical" if days_to_eol < 180 else ("Warning" if days_to_eol < 365 else "Good"),
+            })
+        lc_df = pd.DataFrame(lc_rows)
+        st.dataframe(
+            lc_df.style.applymap(lambda v: "color:#ef4444;font-weight:600;" if v == "Critical" else ("color:#f59e0b;font-weight:600;" if v == "Warning" else "color:#22c55e;" if v == "Good" else ""), subset=["Health"]),
+            use_container_width=True, hide_index=True,
+        )
+        st.caption("Servers with Days to EOL < 180 are highlighted Critical; < 365 are Warning.")
+
+
+def view_website_dev(*, client, role, seed, **_):
+    info_card(
+        "Website Development Hub",
+        "Track web projects, manage tasks, review the technology stack and kick off new projects.",
+    )
+    rng = random.Random(abs(hash(seed)) % 2 ** 32)
+    tabs = st.tabs(["Projects", "Tasks", "Tech Stack", "New Project"])
+
+    projects = store.get().get("web_projects", [])
+
+    with tabs[0]:
+        total = len(projects)
+        active = sum(1 for p in projects if p.get("status") == "Active")
+        on_hold = sum(1 for p in projects if p.get("status") == "On Hold")
+        completed = sum(1 for p in projects if p.get("status") == "Completed")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Total Projects", total)
+        m2.metric("Active", active)
+        m3.metric("On Hold", on_hold)
+        m4.metric("Completed", completed)
+        st.markdown("---")
+        if not projects:
+            st.markdown(
+                '<div style="padding:40px;text-align:center;color:#475569;background:rgba(15,23,42,0.6);border-radius:10px;border:1px solid #1e293b;">'
+                'No projects yet. Use the <b>New Project</b> tab to create one.</div>',
+                unsafe_allow_html=True,
+            )
+        for p in projects:
+            with st.expander(f"📁 {p.get('name', 'Untitled')} — {p.get('status', '—')}", expanded=False):
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown(f"**Client:** {p.get('client_name', '—')}")
+                    st.markdown(f"**Priority:** {p.get('priority', '—')}")
+                    st.markdown(f"**Due Date:** {p.get('due_date', '—')}")
+                    st.markdown(f"**Tech Stack:** {', '.join(p.get('tech_stack', [])) or '—'}")
+                with c2:
+                    st.markdown(f"**Created by:** {p.get('created_by', '—')}")
+                    st.markdown(f"**Description:** {p.get('description', '—')}")
+                new_status = st.selectbox("Status", ["Active", "On Hold", "Completed", "Cancelled"], key=f"wp_status_{p.get('id')}")
+                if st.button("Update Status", key=f"wp_upd_{p.get('id')}", type="primary"):
+                    store.update_web_project(p["id"], status=new_status)
+                    st.success("Status updated.")
+                    st.rerun()
+
+    with tabs[1]:
+        if not projects:
+            st.markdown('<div style="padding:28px;text-align:center;color:#475569;">Create a project first to see tasks.</div>', unsafe_allow_html=True)
+        else:
+            task_names = ["Design wireframes", "Set up repo", "Build API endpoints", "Frontend components", "Write unit tests", "Configure CI/CD", "Deploy to staging", "QA review", "Client feedback round", "Production deploy"]
+            todo_col, prog_col, done_col = st.columns(3)
+            with todo_col:
+                st.markdown('<div style="font-size:0.78rem;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">TODO</div>', unsafe_allow_html=True)
+                for t in rng.sample(task_names, k=min(4, len(task_names))):
+                    st.markdown(f'<div style="background:rgba(15,23,42,0.8);border:1px solid #1e293b;border-radius:8px;padding:10px 12px;margin-bottom:6px;color:#cbd5e1;font-size:0.82rem;">⬜ {t}</div>', unsafe_allow_html=True)
+            with prog_col:
+                st.markdown('<div style="font-size:0.78rem;font-weight:700;color:#22d3ee;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">IN PROGRESS</div>', unsafe_allow_html=True)
+                for t in rng.sample(task_names, k=min(3, len(task_names))):
+                    st.markdown(f'<div style="background:rgba(34,211,238,0.05);border:1px solid rgba(34,211,238,0.18);border-radius:8px;padding:10px 12px;margin-bottom:6px;color:#e2e8f0;font-size:0.82rem;">🔄 {t}</div>', unsafe_allow_html=True)
+            with done_col:
+                st.markdown('<div style="font-size:0.78rem;font-weight:700;color:#22c55e;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">DONE</div>', unsafe_allow_html=True)
+                for t in rng.sample(task_names, k=min(3, len(task_names))):
+                    st.markdown(f'<div style="background:rgba(34,197,94,0.05);border:1px solid rgba(34,197,94,0.18);border-radius:8px;padding:10px 12px;margin-bottom:6px;color:#e2e8f0;font-size:0.82rem;">✅ {t}</div>', unsafe_allow_html=True)
+
+    with tabs[2]:
+        TECH_STACK = [
+            {"Category": "Frontend", "Technology": "React", "Version": "18.3", "Notes": "Primary SPA framework"},
+            {"Category": "Frontend", "Technology": "Next.js", "Version": "14.2", "Notes": "SSR & routing layer"},
+            {"Category": "Frontend", "Technology": "Tailwind CSS", "Version": "3.4", "Notes": "Utility-first styling"},
+            {"Category": "Backend", "Technology": "Node.js", "Version": "20 LTS", "Notes": "API runtime"},
+            {"Category": "Backend", "Technology": "FastAPI", "Version": "0.111", "Notes": "Python microservices"},
+            {"Category": "Backend", "Technology": "GraphQL (Apollo)", "Version": "4.9", "Notes": "Data layer"},
+            {"Category": "Database", "Technology": "PostgreSQL", "Version": "16.2", "Notes": "Primary RDBMS"},
+            {"Category": "Database", "Technology": "Redis", "Version": "7.2", "Notes": "Cache & sessions"},
+            {"Category": "Database", "Technology": "MongoDB", "Version": "7.0", "Notes": "Document store"},
+            {"Category": "DevOps", "Technology": "Docker", "Version": "25.0", "Notes": "Containerisation"},
+            {"Category": "DevOps", "Technology": "GitHub Actions", "Version": "—", "Notes": "CI/CD pipelines"},
+            {"Category": "Cloud", "Technology": "AWS (ECS + RDS)", "Version": "—", "Notes": "Primary cloud"},
+            {"Category": "Cloud", "Technology": "Cloudflare CDN", "Version": "—", "Notes": "Edge & DNS"},
+            {"Category": "Cloud", "Technology": "Vercel", "Version": "—", "Notes": "Frontend hosting"},
+        ]
+        st.dataframe(pd.DataFrame(TECH_STACK), use_container_width=True, hide_index=True)
+
+    with tabs[3]:
+        common_tech = ["React", "Next.js", "Vue.js", "Angular", "Tailwind CSS", "Node.js", "FastAPI", "Django", "Laravel", "PostgreSQL", "MySQL", "MongoDB", "Redis", "Docker", "AWS", "Vercel", "Cloudflare", "GitHub Actions"]
+        client_name = client.get("name", "") if client else ""
+        with st.form("new_web_project_form", clear_on_submit=True):
+            st.markdown("#### Create New Web Project")
+            proj_name = st.text_input("Project Name *", placeholder="e.g. Client Portal Redesign")
+            proj_client = st.text_input("Client Name", value=client_name)
+            proj_desc = st.text_area("Description", height=90)
+            tech_sel = st.multiselect("Tech Stack", common_tech, default=["React", "Node.js", "PostgreSQL"])
+            col_p, col_d = st.columns(2)
+            with col_p:
+                priority = st.selectbox("Priority", ["Low", "Medium", "High", "Critical"])
+            with col_d:
+                due_date = st.text_input("Due Date (YYYY-MM-DD)", placeholder="2026-09-01")
+            submitted = st.form_submit_button("Create Project", type="primary")
+            if submitted:
+                if not proj_name:
+                    st.error("Project Name is required.")
+                else:
+                    store.create_web_project(proj_name, proj_client, proj_desc, tech_sel, priority, due_date, role)
+                    st.success(f"Project **{proj_name}** created successfully.")
+
+
+def view_bug_perf(*, client, role, seed, snapshots, **_):
+    info_card(
+        "Bug Tracker & Web Performance",
+        "Log and manage bugs, monitor Core Web Vitals, track PageSpeed targets and analyse performance trends.",
+    )
+    rng = random.Random(abs(hash(seed)) % 2 ** 32)
+    tabs = st.tabs(["Bug Tracker", "Web Vitals", "Speed Target", "Log Issue"])
+
+    bugs = store.get().get("bugs", [])
+
+    with tabs[0]:
+        total_b = len(bugs)
+        open_b = sum(1 for b in bugs if b.get("status") == "Open")
+        inprog_b = sum(1 for b in bugs if b.get("status") == "In Progress")
+        resolved_b = sum(1 for b in bugs if b.get("status") == "Resolved")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Total", total_b)
+        m2.metric("Open", open_b)
+        m3.metric("In Progress", inprog_b)
+        m4.metric("Resolved", resolved_b)
+        st.markdown("---")
+        if not bugs:
+            st.markdown('<div style="padding:32px;text-align:center;color:#475569;background:rgba(15,23,42,0.6);border-radius:10px;border:1px solid #1e293b;">No bugs logged yet. Use the <b>Log Issue</b> tab.</div>', unsafe_allow_html=True)
+        else:
+            bug_df = pd.DataFrame([{
+                "ID": b.get("id", "—"), "Title": b.get("title", "—"),
+                "Category": b.get("category", "—"), "Priority": b.get("priority", "—"),
+                "Status": b.get("status", "—"), "URL": b.get("url", "—"),
+                "Reporter": b.get("reporter", "—"),
+                "Created": b.get("created_at", "—")[:16] if b.get("created_at") else "—",
+            } for b in bugs])
+            st.dataframe(
+                bug_df.style.applymap(badge_cell(PRIORITY_STYLE), subset=["Priority"]).applymap(badge_cell(TICKET_STATUS_STYLE), subset=["Status"]),
+                use_container_width=True, hide_index=True,
+            )
+            st.markdown("#### Update Bug Status")
+            for b in [x for x in bugs if x.get("status") != "Resolved"][:5]:
+                with st.expander(f"#{b.get('id', '—')} — {b.get('title', 'Untitled')}", expanded=False):
+                    st.markdown(f"**Priority:** {b.get('priority', '—')} | **Category:** {b.get('category', '—')}")
+                    st.markdown(f"**Description:** {b.get('description', '—')}")
+                    ns = st.selectbox("New Status", ["Open", "In Progress", "Resolved", "Wont Fix"], key=f"bug_ns_{b.get('id')}")
+                    if st.button("Update", key=f"bug_upd_{b.get('id')}", type="primary"):
+                        store.update_bug(b["id"], status=ns)
+                        st.success("Bug status updated.")
+                        st.rerun()
+
+    with tabs[1]:
+        lcp = round(rng.uniform(1.8, 4.5), 2)
+        inp = round(rng.uniform(80, 350), 0)
+        cls_val = round(rng.uniform(0.02, 0.35), 3)
+        ttfb = round(rng.uniform(120, 800), 0)
+        v1, v2, v3, v4 = st.columns(4)
+        def _vmetric(col, name, val, good_thresh, warn_thresh, unit=""):
+            status = "Good" if val <= good_thresh else ("Needs Improvement" if val <= warn_thresh else "Poor")
+            color = "#22c55e" if status == "Good" else ("#f59e0b" if status == "Needs Improvement" else "#ef4444")
+            col.metric(name, f"{val}{unit}")
+            col.markdown(f'<span style="color:{color};font-size:0.75rem;font-weight:700;">{status}</span>', unsafe_allow_html=True)
+        _vmetric(v1, "LCP (s)", lcp, 2.5, 4.0)
+        _vmetric(v2, "INP (ms)", inp, 200, 500, "ms")
+        _vmetric(v3, "CLS", cls_val, 0.1, 0.25)
+        _vmetric(v4, "TTFB (ms)", ttfb, 200, 600, "ms")
+        st.markdown("---")
+        st.markdown("""
+**LCP (Largest Contentful Paint):** Measures loading performance. Target ≤ 2.5s for good user experience.
+
+**INP (Interaction to Next Paint):** Measures responsiveness to user interactions. Target ≤ 200ms.
+
+**CLS (Cumulative Layout Shift):** Measures visual stability. Target ≤ 0.1 — higher values indicate layout shifts.
+
+**TTFB (Time to First Byte):** Measures server response time. Target ≤ 200ms; values above 600ms indicate server issues.
+        """)
+
+    with tabs[2]:
+        current_score = rng.randint(65, 82)
+        target_score = 90
+        gap = target_score - current_score
+        st.markdown(f"""
+<div style="background:rgba(15,23,42,0.8);border:1px solid #1e293b;border-radius:12px;padding:28px;text-align:center;margin-bottom:20px;">
+  <div style="font-size:0.78rem;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Current PageSpeed Score</div>
+  <div style="font-size:4rem;font-weight:800;color:{'#22c55e' if current_score >= 90 else ('#f59e0b' if current_score >= 70 else '#ef4444')};">{current_score}</div>
+  <div style="font-size:0.85rem;color:#64748b;margin-top:4px;">Target: <b style="color:#22d3ee;">{target_score}</b> &nbsp;|&nbsp; Gap: <b style="color:#f59e0b;">{gap} points</b></div>
+</div>
+""", unsafe_allow_html=True)
+        progress_val = current_score / 100
+        st.progress(progress_val, text=f"PageSpeed: {current_score}/100")
+        st.markdown("#### Top Improvement Recommendations")
+        recommendations = [
+            ("Compress and serve images in next-gen formats (WebP/AVIF)", "#f59e0b"),
+            ("Enable text compression (Brotli/Gzip) on the server", "#22d3ee"),
+            ("Reduce unused JavaScript — code-split with dynamic imports", "#f59e0b"),
+            ("Implement server-side caching with Redis for API responses", "#22c55e"),
+            ("Preload LCP image and critical fonts using <link rel=preload>", "#22d3ee"),
+            ("Eliminate render-blocking resources (defer non-critical CSS/JS)", "#f59e0b"),
+        ]
+        for rec, color in recommendations:
+            st.markdown(f'<div style="padding:10px 14px;margin-bottom:6px;border-left:3px solid {color};background:rgba(15,23,42,0.7);border-radius:0 8px 8px 0;color:#cbd5e1;font-size:0.84rem;">▸ {rec}</div>', unsafe_allow_html=True)
+
+    with tabs[3]:
+        with st.form("log_bug_form", clear_on_submit=True):
+            st.markdown("#### Log New Bug / Issue")
+            bug_title = st.text_input("Title *", placeholder="e.g. Login button unresponsive on mobile")
+            bug_url = st.text_input("Affected URL", placeholder="https://example.com/login")
+            col_p, col_c = st.columns(2)
+            with col_p:
+                bug_priority = st.selectbox("Priority", ["Low", "Medium", "High", "Critical"])
+            with col_c:
+                bug_category = st.selectbox("Category", ["Performance", "UI Bug", "Functionality", "Content", "Security"])
+            bug_desc = st.text_area("Description *", height=100, placeholder="Describe the issue, steps to reproduce and expected behavior.")
+            submitted = st.form_submit_button("Log Issue", type="primary")
+            if submitted:
+                if not bug_title or not bug_desc:
+                    st.error("Title and Description are required.")
+                else:
+                    store.create_bug(bug_title, bug_desc, bug_url, bug_priority, bug_category, role)
+                    st.success(f"Bug **{bug_title}** logged successfully.")
+
+
+def view_uiux_infra(*, client, role, **_):
+    info_card(
+        "UI/UX & Infrastructure Requests",
+        "Submit UI/UX design or infrastructure change requests, track review progress and view approved items.",
+    )
+    tabs = st.tabs(["Submit Request", "In Review", "Approved / Closed"])
+    submissions = store.get().get("uiux_submissions", [])
+
+    with tabs[0]:
+        with st.form("uiux_submit_form", clear_on_submit=True):
+            st.markdown("#### New Submission")
+            req_title = st.text_input("Title *", placeholder="e.g. Redesign dashboard header navigation")
+            req_type = st.selectbox("Type", [
+                "UI Design Change", "Infrastructure Change", "New Feature Request",
+                "Performance Improvement", "Security Hardening",
+            ])
+            col_p, col_u = st.columns(2)
+            with col_p:
+                req_priority = st.selectbox("Priority", ["Low", "Medium", "High", "Critical"])
+            with col_u:
+                req_url = st.text_input("Reference URL (optional)", placeholder="https://...")
+            req_desc = st.text_area("Description *", height=110, placeholder="Explain the change, the problem it solves and any acceptance criteria.")
+            attachment = st.file_uploader("Attach file (image or PDF, max 5 MB)", type=["png", "jpg", "jpeg", "pdf", "svg", "webp"])
+            submitted = st.form_submit_button("Submit Request", type="primary")
+            if submitted:
+                if not req_title or not req_desc:
+                    st.error("Title and Description are required.")
+                else:
+                    att_data = None
+                    if attachment:
+                        raw = attachment.read()
+                        if len(raw) > _MAX_FILE_MB * 1024 * 1024:
+                            st.error(f"File exceeds {_MAX_FILE_MB} MB limit.")
+                        else:
+                            att_data = {"name": attachment.name, "mime": attachment.type, "data_b64": base64.b64encode(raw).decode(), "size": len(raw)}
+                    store.submit_uiux(req_title, req_type, req_desc, req_priority, req_url, role, attachment=att_data)
+                    st.success(f"Request **{req_title}** submitted successfully.")
+
+    with tabs[1]:
+        in_review = [s for s in submissions if s.get("status") in ("Pending", "In Review")]
+        if not in_review:
+            st.markdown('<div style="padding:32px;text-align:center;color:#475569;background:rgba(15,23,42,0.6);border-radius:10px;border:1px solid #1e293b;">No requests currently in review.</div>', unsafe_allow_html=True)
+        for s in in_review:
+            with st.expander(f"📋 {s.get('title', 'Untitled')} — {s.get('type_', '—')} [{s.get('status', '—')}]", expanded=False):
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown(f"**Type:** {s.get('type_', '—')}")
+                    st.markdown(f"**Priority:** {s.get('priority', '—')}")
+                    st.markdown(f"**Submitted by:** {s.get('submitted_by', '—')}")
+                with c2:
+                    st.markdown(f"**URL:** {s.get('url', '—') or '—'}")
+                    st.markdown(f"**Created:** {s.get('created_at', '—')[:16] if s.get('created_at') else '—'}")
+                st.markdown(f"**Description:** {s.get('description', '—')}")
+                new_status = st.selectbox("Update Status", ["Pending", "In Review", "Approved", "Rejected"], key=f"uiux_ns_{s.get('id')}")
+                if st.button("Update Status", key=f"uiux_upd_{s.get('id')}", type="primary"):
+                    store.update_uiux(s["id"], status=new_status)
+                    st.success("Status updated.")
+                    st.rerun()
+
+    with tabs[2]:
+        closed = [s for s in submissions if s.get("status") in ("Approved", "Rejected")]
+        if not closed:
+            st.info("No approved or closed submissions yet.")
+        else:
+            closed_df = pd.DataFrame([{
+                "ID": s.get("id", "—"), "Title": s.get("title", "—"),
+                "Type": s.get("type_", "—"), "Priority": s.get("priority", "—"),
+                "Status": s.get("status", "—"), "Submitted By": s.get("submitted_by", "—"),
+                "Created": s.get("created_at", "—")[:10] if s.get("created_at") else "—",
+            } for s in closed])
+            st.dataframe(closed_df, use_container_width=True, hide_index=True)
+
+
+def view_client_support_module(*, client, snapshots, alerts, role, **_):
+    info_card(
+        "Client Support Module",
+        "Manage open support cases, track SLA compliance, access the contact directory and escalate issues.",
+    )
+    rng = random.Random(abs(hash(str(client))) % 2 ** 32)
+    tabs = st.tabs(["Active Cases", "SLA Tracker", "Contact Directory", "Escalate"])
+
+    tickets = store.get().get("tickets", [])
+    open_tickets = [t for t in tickets if t.get("status") in ("Open", "In Progress", "Escalated")]
+
+    with tabs[0]:
+        if not open_tickets:
+            st.markdown('<div style="padding:32px;text-align:center;color:#475569;background:rgba(15,23,42,0.6);border-radius:10px;border:1px solid #1e293b;">No active support cases.</div>', unsafe_allow_html=True)
+        for t in open_tickets[:20]:
+            with st.expander(f"🎫 #{t.get('id', '—')} — {t.get('title', 'Untitled')} [{t.get('status', '—')}]", expanded=False):
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown(f"**Status:** {t.get('status', '—')}")
+                    st.markdown(f"**Priority:** {t.get('priority', '—')}")
+                    st.markdown(f"**Assigned to:** {t.get('assigned_to', '—')}")
+                with c2:
+                    st.markdown(f"**Client:** {t.get('client', '—')}")
+                    st.markdown(f"**Created:** {str(t.get('created_at', '—'))[:16]}")
+                    st.markdown(f"**Updated:** {str(t.get('updated_at', '—'))[:16]}")
+                st.markdown(f"**Description:** {t.get('description', '—')}")
+                if t.get("notes"):
+                    st.markdown("**Notes:**")
+                    for n in t["notes"][-3:]:
+                        st.markdown(f'<div style="background:rgba(15,23,42,0.7);border-left:3px solid #22d3ee;padding:8px 12px;border-radius:0 6px 6px 0;margin-bottom:4px;font-size:0.8rem;color:#94a3b8;">{n}</div>', unsafe_allow_html=True)
+                with st.form(f"note_form_{t.get('id')}", clear_on_submit=True):
+                    note_text = st.text_input("Add note", placeholder="Enter update or resolution note...")
+                    if st.form_submit_button("Add Note", type="primary"):
+                        existing = list(t.get("notes", []))
+                        existing.append(f"[{role}] {note_text}")
+                        store.update_ticket(t["id"], notes=existing)
+                        st.success("Note added.")
+                        st.rerun()
+
+    with tabs[1]:
+        all_t = tickets
+        total_t = len(all_t)
+        resolved_t = [t for t in all_t if t.get("status") == "Resolved"]
+        open_over_24h = sum(1 for t in open_tickets if (datetime.now() - pd.Timestamp(t.get("created_at", datetime.now())).to_pydatetime().replace(tzinfo=None)).total_seconds() > 86400)
+        escalated_t = sum(1 for t in all_t if t.get("status") == "Escalated")
+        sla_pct = round((len(resolved_t) / max(total_t, 1)) * 100, 1)
+        avg_res_hours = round(rng.uniform(2.5, 18.0), 1)
+        s1, s2, s3, s4 = st.columns(4)
+        s1.metric("SLA Compliance", f"{sla_pct}%", delta="+2.1%" if sla_pct > 80 else "-3.5%")
+        s2.metric("Avg Resolution Time", f"{avg_res_hours}h")
+        s3.metric("Open > 24h", open_over_24h)
+        s4.metric("Escalated", escalated_t)
+        st.markdown("---")
+        sla_tiers = [("P1 — Critical", "1h response / 4h resolution", rng.randint(88, 100), "#ef4444"),
+                     ("P2 — High",     "4h response / 8h resolution",  rng.randint(85, 99),  "#f59e0b"),
+                     ("P3 — Medium",   "8h response / 24h resolution", rng.randint(90, 100), "#22d3ee"),
+                     ("P4 — Low",      "24h response / 72h resolution",rng.randint(92, 100), "#22c55e")]
+        for tier, target, compliance, color in sla_tiers:
+            st.markdown(f'<div style="display:flex;align-items:center;justify-content:space-between;background:rgba(15,23,42,0.7);border:1px solid #1e293b;border-radius:8px;padding:12px 18px;margin-bottom:8px;"><span style="color:#e2e8f0;font-weight:600;">{tier}</span><span style="color:#64748b;font-size:0.8rem;">{target}</span><span style="color:{color};font-weight:700;font-size:1.05rem;">{compliance}%</span></div>', unsafe_allow_html=True)
+
+    with tabs[2]:
+        CONTACTS = [
+            ("Alice Chen", "Head of IT Operations", "alice.chen@caspira.io", "+1 415-555-0101", "Tier 1"),
+            ("Bob Martinez", "Senior DBA", "bob.martinez@caspira.io", "+1 415-555-0102", "Tier 2"),
+            ("Carol Okafor", "Infrastructure Lead", "carol.okafor@caspira.io", "+1 415-555-0103", "Tier 2"),
+            ("David Kim", "On-Call Engineer", "david.kim@caspira.io", "+1 415-555-0104", "Tier 1"),
+            ("Elena Torres", "Customer Success Manager", "elena.torres@caspira.io", "+1 415-555-0105", "Tier 1"),
+            ("Faisal Al-Amin", "Security Engineer", "faisal.alamin@caspira.io", "+1 415-555-0106", "Tier 3"),
+            ("Grace Liu", "Backend Developer", "grace.liu@caspira.io", "+1 415-555-0107", "Tier 2"),
+            ("Henry Osei", "DevOps Specialist", "henry.osei@caspira.io", "+1 415-555-0108", "Tier 2"),
+        ]
+        cols = st.columns(2)
+        for i, (name, role_c, email, phone, tier) in enumerate(CONTACTS):
+            tier_color = {"Tier 1": "#22c55e", "Tier 2": "#22d3ee", "Tier 3": "#f59e0b"}.get(tier, "#475569")
+            with cols[i % 2]:
+                st.markdown(f"""
+<div style="background:rgba(15,23,42,0.8);border:1px solid #1e293b;border-radius:10px;padding:16px 18px;margin-bottom:12px;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+    <div>
+      <div style="font-size:0.95rem;font-weight:700;color:#e2e8f0;">{name}</div>
+      <div style="font-size:0.78rem;color:#64748b;margin-top:2px;">{role_c}</div>
+    </div>
+    <span style="{BADGE_CSS}background:rgba(0,0,0,0.3);color:{tier_color};border:1px solid {tier_color}44;">{tier}</span>
+  </div>
+  <div style="margin-top:10px;font-size:0.8rem;color:#94a3b8;">📧 {email}</div>
+  <div style="font-size:0.8rem;color:#94a3b8;">📞 {phone}</div>
+</div>""", unsafe_allow_html=True)
+
+    with tabs[3]:
+        open_ticket_ids = [f"#{t.get('id', '—')} — {t.get('title', 'Untitled')}" for t in open_tickets]
+        if not open_ticket_ids:
+            st.markdown('<div style="padding:28px;text-align:center;color:#475569;">No open tickets available to escalate.</div>', unsafe_allow_html=True)
+        else:
+            with st.form("escalate_form", clear_on_submit=True):
+                st.markdown("#### Escalate Ticket")
+                sel_ticket = st.selectbox("Select Ticket", open_ticket_ids)
+                esc_reason = st.text_area("Escalation Reason *", height=90, placeholder="Describe why this ticket needs escalation.")
+                col_ep, col_ea = st.columns(2)
+                with col_ep:
+                    esc_priority = st.selectbox("Escalated Priority", ["High", "Critical"])
+                with col_ea:
+                    assign_to = st.selectbox("Assign To", ALL_ROLES)
+                submitted = st.form_submit_button("Escalate Ticket", type="primary")
+                if submitted:
+                    if not esc_reason:
+                        st.error("Escalation reason is required.")
+                    else:
+                        ticket_id = sel_ticket.split(" — ")[0].lstrip("#")
+                        store.update_ticket(ticket_id, status="Escalated", priority=esc_priority, assigned_to=assign_to)
+                        st.success(f"Ticket **{sel_ticket}** escalated to **{assign_to}**.")
+                        st.rerun()
+
+
+def view_workflow_docs(*, role, seed, **_):
+    info_card(
+        "Workflow & Documentation Library",
+        "Centralised SOPs, runbooks, policies and guides. Add documents and search the full library.",
+    )
+    rng = random.Random(abs(hash(seed)) % 2 ** 32)
+
+    BUILTIN_DOCS = [
+        {"id": "builtin-1", "title": "Incident Response Playbook", "category": "Incident Response",
+         "content": "1. Acknowledge alert within SLA window.\n2. Assess severity (P1-P4) using impact/urgency matrix.\n3. Open ticket and assign to on-call engineer.\n4. Notify stakeholders via #incidents channel.\n5. Resolve or escalate within SLA.\n6. Write post-mortem within 48h for P1/P2.",
+         "tags": "incident, response, playbook, alert, on-call", "author": "IT Operations"},
+        {"id": "builtin-2", "title": "Backup & Recovery Procedures", "category": "Backup & Recovery",
+         "content": "Daily backups run at 02:00 UTC via automated jobs.\nRetention: 7 daily, 4 weekly, 12 monthly snapshots.\nRecovery: restore from latest snapshot, verify checksums, test on staging before promoting.\nRTO target: 4h. RPO target: 1h.\nEscalate to Infrastructure Engineer if backup job fails twice in a row.",
+         "tags": "backup, recovery, RTO, RPO, restore, snapshot", "author": "Infrastructure Team"},
+        {"id": "builtin-3", "title": "PostgreSQL Admin Guide", "category": "Database Admin",
+         "content": "Routine tasks: VACUUM ANALYZE weekly, REINDEX monthly.\nMonitor: pg_stat_activity, pg_stat_bgwriter, pg_stat_replication.\nCritical parameters: max_connections, shared_buffers, work_mem, wal_level.\nFailover: use pg_promote() on standby, update load balancer, update pg_hba.conf.\nBackup: pg_dump for logical, pg_basebackup for physical.",
+         "tags": "postgresql, postgres, admin, DBA, vacuum, replication", "author": "Database Team"},
+        {"id": "builtin-4", "title": "Access Management Policy", "category": "Access Management",
+         "content": "All access requests must be approved by the relevant team lead.\nPrinciple of least privilege applies to all roles.\nPasswords must meet complexity requirements (12+ chars, mixed case, symbols).\nMFA required for all production database access.\nAccess reviewed quarterly; unused accounts disabled after 90 days of inactivity.\nPassword resets logged in audit ticket.",
+         "tags": "access, password, MFA, IAM, permissions, policy", "author": "Security Team"},
+        {"id": "builtin-5", "title": "Development Standards & Git Workflow", "category": "Development",
+         "content": "Branch strategy: main (prod), develop, feature/*, hotfix/*.\nAll PRs require 1 peer review + CI pass before merge.\nCommit messages: Conventional Commits format (feat:, fix:, chore:, docs:).\nCode style: enforced via ESLint/Prettier (JS) and Black/Flake8 (Python).\nNo secrets in source code — use environment variables or Vault.",
+         "tags": "git, development, PR, branch, standards, code review", "author": "Dev Team"},
+        {"id": "builtin-6", "title": "Deployment & Release Runbook", "category": "Deployment",
+         "content": "1. Merge to develop, verify CI passes on staging.\n2. Create release branch, update CHANGELOG.\n3. Run smoke tests on staging environment.\n4. Open deployment ticket, notify #operations channel.\n5. Deploy to production during low-traffic window (02:00-04:00 UTC).\n6. Monitor error rates and latency for 30 min post-deploy.\n7. Rollback plan: redeploy previous Docker image tag.",
+         "tags": "deployment, release, CI/CD, rollback, production, runbook", "author": "DevOps Team"},
+    ]
+
+    stored_docs = store.get().get("documents", [])
+    all_docs = BUILTIN_DOCS + stored_docs
+
+    CATEGORY_COLORS = {
+        "Incident Response": "#ef4444", "Backup & Recovery": "#f59e0b",
+        "Database Admin": "#22d3ee", "Access Management": "#8b5cf6",
+        "Development": "#22c55e", "Deployment": "#fb923c",
+    }
+
+    tabs = st.tabs(["Document Library", "Add Document", "Search"])
+
+    with tabs[0]:
+        st.markdown(f"**{len(all_docs)} documents** in library ({len(BUILTIN_DOCS)} built-in, {len(stored_docs)} custom)")
+        for doc in all_docs:
+            cat = doc.get("category", "General")
+            cat_color = CATEGORY_COLORS.get(cat, "#475569")
+            badge_html = f'<span style="{BADGE_CSS}background:rgba(0,0,0,0.3);color:{cat_color};border:1px solid {cat_color}44;">{cat}</span>'
+            with st.expander(f"{doc.get('title', 'Untitled')}", expanded=False):
+                st.markdown(badge_html, unsafe_allow_html=True)
+                st.markdown(f"**Author:** {doc.get('author', '—')} &nbsp;|&nbsp; **Tags:** `{doc.get('tags', '—')}`")
+                st.markdown("---")
+                st.markdown(doc.get("content", "No content available."))
+
+    with tabs[1]:
+        with st.form("add_doc_form", clear_on_submit=True):
+            st.markdown("#### Add New Document")
+            doc_title = st.text_input("Title *", placeholder="e.g. Redis Cache Eviction Policy")
+            doc_category = st.selectbox("Category", ["Incident Response", "Backup & Recovery", "Database Admin", "Access Management", "Development", "Deployment", "General"])
+            doc_content = st.text_area("Content *", height=200, placeholder="Write the document content here. Markdown is supported.")
+            doc_tags = st.text_input("Tags (comma-separated)", placeholder="redis, cache, eviction, policy")
+            submitted = st.form_submit_button("Add Document", type="primary")
+            if submitted:
+                if not doc_title or not doc_content:
+                    st.error("Title and Content are required.")
+                else:
+                    store.add_document(doc_title, doc_category, doc_content, doc_tags, role)
+                    st.success(f"Document **{doc_title}** added to the library.")
+
+    with tabs[2]:
+        query = st.text_input("Search documents", placeholder="Search by title, content or tags...")
+        if query:
+            q_lower = query.lower()
+            results = [d for d in all_docs if q_lower in d.get("title", "").lower() or q_lower in d.get("content", "").lower() or q_lower in d.get("tags", "").lower()]
+            st.markdown(f"**{len(results)} result(s)** for `{query}`")
+            if not results:
+                st.markdown('<div style="padding:24px;text-align:center;color:#475569;">No documents matched your search.</div>', unsafe_allow_html=True)
+            for doc in results:
+                cat = doc.get("category", "General")
+                cat_color = CATEGORY_COLORS.get(cat, "#475569")
+                with st.expander(f"{doc.get('title', 'Untitled')} — {cat}", expanded=True):
+                    st.markdown(f'<span style="{BADGE_CSS}background:rgba(0,0,0,0.3);color:{cat_color};border:1px solid {cat_color}44;">{cat}</span>', unsafe_allow_html=True)
+                    st.markdown(doc.get("content", ""))
+        else:
+            st.markdown('<div style="padding:24px;text-align:center;color:#475569;">Enter a search term above to find documents.</div>', unsafe_allow_html=True)
+
+
+def view_ops_reporting(*, client, snapshots, alerts, backups, seed, role, **_):
+    info_card(
+        "Operations Reporting & Analytics",
+        "KPI dashboards, pre-built fleet reports, trend analysis and export centre for all operational data.",
+    )
+    rng = random.Random(abs(hash(seed)) % 2 ** 32)
+    tabs = st.tabs(["KPI Dashboard", "Fleet Reports", "Trend Analysis", "Export Center"])
+
+    now = datetime.now()
+    avg_uptime = round(sum(s.get("uptime_pct_30d", 99.0) for s in snapshots) / max(len(snapshots), 1), 2)
+    mttr_h = round(rng.uniform(0.5, 4.2), 1)
+    backup_success_rate = round(rng.uniform(94.0, 99.9), 1)
+    active_incidents = sum(1 for a in alerts if a.get("status") == "Open")
+
+    with tabs[0]:
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Fleet Availability", f"{avg_uptime}%", delta=f"+{round(rng.uniform(0.01, 0.3), 2)}%")
+        k2.metric("Avg MTTR", f"{mttr_h}h", delta=f"-{round(rng.uniform(0.1, 0.5), 1)}h", delta_color="inverse")
+        k3.metric("Backup Success Rate", f"{backup_success_rate}%")
+        k4.metric("Active Incidents", active_incidents, delta_color="inverse")
+        st.markdown("---")
+        mini1, mini2, mini3 = st.columns(3)
+        with mini1:
+            st.markdown("**Top 3 by Latency**")
+            top_lat = sorted(snapshots, key=lambda s: s.get("query_latency_ms", 0), reverse=True)[:3]
+            st.dataframe(pd.DataFrame([{"Server": s["name"], "Latency (ms)": f"{s.get('query_latency_ms', 0):.1f}"} for s in top_lat]), use_container_width=True, hide_index=True)
+        with mini2:
+            st.markdown("**Top 3 by Disk Usage**")
+            top_disk = sorted(snapshots, key=lambda s: s.get("disk_pct", 0), reverse=True)[:3]
+            st.dataframe(pd.DataFrame([{"Server": s["name"], "Disk %": f"{s.get('disk_pct', 0):.1f}"} for s in top_disk]), use_container_width=True, hide_index=True)
+        with mini3:
+            st.markdown("**Recent 3 Alerts**")
+            recent_alerts = sorted(alerts, key=lambda a: a.get("triggered_at", ""), reverse=True)[:3]
+            st.dataframe(pd.DataFrame([{"Server": a.get("server", "—"), "Severity": a.get("severity", "—"), "Status": a.get("status", "—")} for a in recent_alerts]), use_container_width=True, hide_index=True)
+
+    with tabs[1]:
+        REPORT_CARDS = [
+            ("Fleet Health Summary", "Comprehensive overview of all servers: status, resource usage, uptime and replication health."),
+            ("Backup Coverage Report", "Backup job outcomes, success rates, last backup times and coverage gaps per server."),
+            ("Alert Activity Report", "All alerts by severity, status and server over the reporting period."),
+            ("Capacity Planning Report", "CPU, memory and disk trends to forecast resource needs for the next quarter."),
+        ]
+        for title, desc in REPORT_CARDS:
+            with st.container():
+                rc1, rc2 = st.columns([4, 1])
+                with rc1:
+                    st.markdown(f"**{title}**")
+                    st.caption(desc)
+                    last_gen = (now - timedelta(hours=rng.randint(1, 72))).strftime("%Y-%m-%d %H:%M")
+                    st.caption(f"Last generated: {last_gen}")
+                with rc2:
+                    if title == "Fleet Health Summary":
+                        csv_data = pd.DataFrame([{k: s.get(k, "—") for k in ["name", "db_type", "role", "region", "status", "cpu_pct", "mem_pct", "disk_pct", "uptime_pct_30d"]} for s in snapshots]).to_csv(index=False)
+                    elif title == "Backup Coverage Report":
+                        csv_data = pd.DataFrame(backups).to_csv(index=False) if backups else "server,status,timestamp\n"
+                    elif title == "Alert Activity Report":
+                        csv_data = pd.DataFrame(alerts).to_csv(index=False) if alerts else "server,severity,status\n"
+                    else:
+                        csv_data = pd.DataFrame([{"Server": s["name"], "CPU %": s.get("cpu_pct"), "Mem %": s.get("mem_pct"), "Disk %": s.get("disk_pct")} for s in snapshots]).to_csv(index=False)
+                    st.download_button("Download CSV", data=csv_data, file_name=f"{title.lower().replace(' ', '_')}.csv", mime="text/csv", key=f"rpt_{title[:8]}")
+                st.markdown('<hr style="border-color:#1e293b;margin:8px 0;">', unsafe_allow_html=True)
+
+    with tabs[2]:
+        st.markdown("#### Key Metric Trends vs Previous Period")
+        st.caption("Simulated trend data — connect a time-series store for real historical comparison.")
+        TRENDS = [
+            ("Fleet Availability",    f"{avg_uptime}%",   rng.choice(["↑", "↑", "→"]), "#22c55e"),
+            ("Alert Volume",          str(len(alerts)),    rng.choice(["↓", "↓", "→"]), "#22c55e"),
+            ("Avg Query Latency",     f"{round(sum(s.get('query_latency_ms', 0) for s in snapshots)/max(len(snapshots),1), 1)} ms", rng.choice(["↑", "→", "↓"]), "#f59e0b"),
+            ("Backup Success Rate",   f"{backup_success_rate}%", rng.choice(["↑", "→"]), "#22c55e"),
+            ("Avg Disk Utilisation",  f"{round(sum(s.get('disk_pct', 0) for s in snapshots)/max(len(snapshots),1), 1)}%", rng.choice(["↑", "→"]), "#f59e0b"),
+            ("Open Incidents",        str(active_incidents), rng.choice(["↓", "→", "↑"]), "#ef4444" if active_incidents > 3 else "#22c55e"),
+        ]
+        for metric, value, arrow, color in TRENDS:
+            arrow_color = "#22c55e" if arrow == "↑" else ("#ef4444" if arrow == "↓" else "#475569")
+            st.markdown(f'<div style="display:flex;align-items:center;justify-content:space-between;background:rgba(15,23,42,0.7);border:1px solid #1e293b;border-radius:8px;padding:12px 18px;margin-bottom:6px;"><span style="color:#cbd5e1;font-weight:600;">{metric}</span><span style="color:{color};font-weight:700;">{value}</span><span style="color:{arrow_color};font-size:1.2rem;font-weight:800;">{arrow}</span></div>', unsafe_allow_html=True)
+
+    with tabs[3]:
+        st.markdown("#### Export Operational Data")
+        st.caption("Download raw CSV exports for use in external reporting tools.")
+        e1, e2, e3 = st.columns(3)
+        with e1:
+            fleet_csv = pd.DataFrame([{k: s.get(k, "—") for k in ["name", "db_type", "role", "region", "status", "cpu_pct", "mem_pct", "disk_pct", "query_latency_ms", "active_connections", "replication_lag_s", "uptime_pct_30d"]} for s in snapshots]).to_csv(index=False)
+            st.download_button("Full Fleet Export CSV", data=fleet_csv, file_name="fleet_export.csv", mime="text/csv", use_container_width=True)
+            st.caption(f"{len(snapshots)} servers")
+        with e2:
+            alerts_csv = pd.DataFrame(alerts).to_csv(index=False) if alerts else "no data\n"
+            st.download_button("Alerts Export CSV", data=alerts_csv, file_name="alerts_export.csv", mime="text/csv", use_container_width=True)
+            st.caption(f"{len(alerts)} alerts")
+        with e3:
+            backups_csv = pd.DataFrame(backups).to_csv(index=False) if backups else "no data\n"
+            st.download_button("Backup Log CSV", data=backups_csv, file_name="backup_log.csv", mime="text/csv", use_container_width=True)
+            st.caption(f"{len(backups)} backup records")
+
+
+def view_channels_page(*, role, **_):
+    info_card(
+        "Team Channels",
+        "Real-time team communication across all operational channels. Select a channel to read and post messages.",
+    )
+    render_channels(role)
+
+
+# ============================================================
 # DISPATCH MAP
 # ============================================================
 
