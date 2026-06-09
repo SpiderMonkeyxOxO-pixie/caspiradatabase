@@ -1831,7 +1831,7 @@ def view_server_maint(*, client, snapshots, servers, seed, role, **_):
                     st.markdown(f"**Start:** {w.get('start', '—')}")
                     st.markdown(f"**End:** {w.get('end', '—')}")
                 with c2:
-                    st.markdown(f"**Affected Servers:** {', '.join(w.get('server_list', [])) or '—'}")
+                    st.markdown(f"**Affected Servers:** {', '.join(w.get('affected_servers', [])) or '—'}")
                     st.markdown(f"**Created by:** {w.get('created_by', '—')}")
                     st.markdown(f"**Description:** {w.get('description', '—')}")
                 new_status = st.selectbox("Update status", ["Scheduled", "In Progress", "Completed", "Cancelled"], key=f"mw_status_{w.get('id')}", index=["Scheduled", "In Progress", "Completed", "Cancelled"].index(w.get("status", "Scheduled")) if w.get("status") in ["Scheduled", "In Progress", "Completed", "Cancelled"] else 0)
@@ -1896,7 +1896,7 @@ def view_server_maint(*, client, snapshots, servers, seed, role, **_):
                 "ID": w.get("id", "—"), "Title": w.get("title", "—"),
                 "Type": w.get("change_type", "—"), "Owner": w.get("owner", "—"),
                 "Start": w.get("start", "—"), "End": w.get("end", "—"),
-                "Status": w.get("status", "—"), "Servers": ", ".join(w.get("server_list", [])),
+                "Status": w.get("status", "—"), "Servers": ", ".join(w.get("affected_servers", [])),
             } for w in closed])
             st.dataframe(log_df, use_container_width=True, hide_index=True)
 
@@ -1925,7 +1925,7 @@ def view_asset_mgmt(*, client, snapshots, servers, seed, role, **_):
             })
         fleet_df = pd.DataFrame(fleet_rows)
         st.dataframe(
-            fleet_df.style.applymap(badge_cell(STATUS_STYLE), subset=["Status"]),
+            fleet_df.style.map(badge_cell(STATUS_STYLE), subset=["Status"]),
             use_container_width=True, hide_index=True,
         )
         ca, cb, cc, cd = st.columns(4)
@@ -2007,12 +2007,12 @@ def view_website_dev(*, client, role, seed, **_):
 
     with tabs[0]:
         total = len(projects)
-        active = sum(1 for p in projects if p.get("status") == "Active")
+        active = sum(1 for p in projects if p.get("status") == "In Progress")
         on_hold = sum(1 for p in projects if p.get("status") == "On Hold")
         completed = sum(1 for p in projects if p.get("status") == "Completed")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Total Projects", total)
-        m2.metric("Active", active)
+        m2.metric("In Progress", active)
         m3.metric("On Hold", on_hold)
         m4.metric("Completed", completed)
         st.markdown("---")
@@ -2026,14 +2026,14 @@ def view_website_dev(*, client, role, seed, **_):
             with st.expander(f"📁 {p.get('name', 'Untitled')} — {p.get('status', '—')}", expanded=False):
                 c1, c2 = st.columns(2)
                 with c1:
-                    st.markdown(f"**Client:** {p.get('client_name', '—')}")
+                    st.markdown(f"**Client:** {p.get('client', '—')}")
                     st.markdown(f"**Priority:** {p.get('priority', '—')}")
                     st.markdown(f"**Due Date:** {p.get('due_date', '—')}")
                     st.markdown(f"**Tech Stack:** {', '.join(p.get('tech_stack', [])) or '—'}")
                 with c2:
                     st.markdown(f"**Created by:** {p.get('created_by', '—')}")
                     st.markdown(f"**Description:** {p.get('description', '—')}")
-                new_status = st.selectbox("Status", ["Active", "On Hold", "Completed", "Cancelled"], key=f"wp_status_{p.get('id')}")
+                new_status = st.selectbox("Status", ["In Progress", "On Hold", "Completed", "Cancelled"], key=f"wp_status_{p.get('id')}")
                 if st.button("Update Status", key=f"wp_upd_{p.get('id')}", type="primary"):
                     store.update_web_project(p["id"], status=new_status)
                     st.success("Status updated.")
@@ -2132,7 +2132,7 @@ def view_bug_perf(*, client, role, seed, snapshots, **_):
                 "Created": b.get("created_at", "—")[:16] if b.get("created_at") else "—",
             } for b in bugs])
             st.dataframe(
-                bug_df.style.applymap(badge_cell(PRIORITY_STYLE), subset=["Priority"]).applymap(badge_cell(TICKET_STATUS_STYLE), subset=["Status"]),
+                bug_df.style.map(badge_cell(PRIORITY_STYLE), subset=["Priority"]).map(badge_cell(TICKET_STATUS_STYLE), subset=["Status"]),
                 use_container_width=True, hide_index=True,
             )
             st.markdown("#### Update Bug Status")
@@ -2256,21 +2256,21 @@ def view_uiux_infra(*, client, role, **_):
                     st.success(f"Request **{req_title}** submitted successfully.")
 
     with tabs[1]:
-        in_review = [s for s in submissions if s.get("status") in ("Pending", "In Review")]
+        in_review = [s for s in submissions if s.get("status") in ("Pending Review", "In Review")]
         if not in_review:
             st.markdown('<div style="padding:32px;text-align:center;color:#475569;background:rgba(15,23,42,0.6);border-radius:10px;border:1px solid #1e293b;">No requests currently in review.</div>', unsafe_allow_html=True)
         for s in in_review:
-            with st.expander(f"📋 {s.get('title', 'Untitled')} — {s.get('type_', '—')} [{s.get('status', '—')}]", expanded=False):
+            with st.expander(f"📋 {s.get('title', 'Untitled')} — {s.get('type', '—')} [{s.get('status', '—')}]", expanded=False):
                 c1, c2 = st.columns(2)
                 with c1:
-                    st.markdown(f"**Type:** {s.get('type_', '—')}")
+                    st.markdown(f"**Type:** {s.get('type', '—')}")
                     st.markdown(f"**Priority:** {s.get('priority', '—')}")
                     st.markdown(f"**Submitted by:** {s.get('submitted_by', '—')}")
                 with c2:
                     st.markdown(f"**URL:** {s.get('url', '—') or '—'}")
                     st.markdown(f"**Created:** {s.get('created_at', '—')[:16] if s.get('created_at') else '—'}")
                 st.markdown(f"**Description:** {s.get('description', '—')}")
-                new_status = st.selectbox("Update Status", ["Pending", "In Review", "Approved", "Rejected"], key=f"uiux_ns_{s.get('id')}")
+                new_status = st.selectbox("Update Status", ["Pending Review", "In Review", "Approved", "Rejected"], key=f"uiux_ns_{s.get('id')}")
                 if st.button("Update Status", key=f"uiux_upd_{s.get('id')}", type="primary"):
                     store.update_uiux(s["id"], status=new_status)
                     st.success("Status updated.")
@@ -2283,7 +2283,7 @@ def view_uiux_infra(*, client, role, **_):
         else:
             closed_df = pd.DataFrame([{
                 "ID": s.get("id", "—"), "Title": s.get("title", "—"),
-                "Type": s.get("type_", "—"), "Priority": s.get("priority", "—"),
+                "Type": s.get("type", "—"), "Priority": s.get("priority", "—"),
                 "Status": s.get("status", "—"), "Submitted By": s.get("submitted_by", "—"),
                 "Created": s.get("created_at", "—")[:10] if s.get("created_at") else "—",
             } for s in closed])
@@ -2319,13 +2319,16 @@ def view_client_support_module(*, client, snapshots, alerts, role, **_):
                 if t.get("notes"):
                     st.markdown("**Notes:**")
                     for n in t["notes"][-3:]:
-                        st.markdown(f'<div style="background:rgba(15,23,42,0.7);border-left:3px solid #22d3ee;padding:8px 12px;border-radius:0 6px 6px 0;margin-bottom:4px;font-size:0.8rem;color:#94a3b8;">{n}</div>', unsafe_allow_html=True)
+                        if isinstance(n, dict):
+                            note_text_disp = f"[{n.get('ts','')[:16]}] {n.get('author','')}: {n.get('text','')}"
+                        else:
+                            note_text_disp = str(n)
+                        st.markdown(f'<div style="background:rgba(15,23,42,0.7);border-left:3px solid #22d3ee;padding:8px 12px;border-radius:0 6px 6px 0;margin-bottom:4px;font-size:0.8rem;color:#94a3b8;">{note_text_disp}</div>', unsafe_allow_html=True)
                 with st.form(f"note_form_{t.get('id')}", clear_on_submit=True):
-                    note_text = st.text_input("Add note", placeholder="Enter update or resolution note...")
+                    note_input = st.text_input("Add note", placeholder="Enter update or resolution note...")
                     if st.form_submit_button("Add Note", type="primary"):
-                        existing = list(t.get("notes", []))
-                        existing.append(f"[{role}] {note_text}")
-                        store.update_ticket(t["id"], notes=existing)
+                        if note_input.strip():
+                            store.add_note(t["id"], role, note_input)
                         st.success("Note added.")
                         st.rerun()
 
@@ -2499,7 +2502,8 @@ def view_ops_reporting(*, client, snapshots, alerts, backups, seed, role, **_):
     avg_uptime = round(sum(s.get("uptime_pct_30d", 99.0) for s in snapshots) / max(len(snapshots), 1), 2)
     mttr_h = round(rng.uniform(0.5, 4.2), 1)
     backup_success_rate = round(rng.uniform(94.0, 99.9), 1)
-    active_incidents = sum(1 for a in alerts if a.get("status") == "Open")
+    # alerts is a DataFrame — use vectorised operations
+    active_incidents = int((alerts["status"] == "Open").sum()) if hasattr(alerts, "columns") else 0
 
     with tabs[0]:
         k1, k2, k3, k4 = st.columns(4)
@@ -2519,8 +2523,11 @@ def view_ops_reporting(*, client, snapshots, alerts, backups, seed, role, **_):
             st.dataframe(pd.DataFrame([{"Server": s["name"], "Disk %": f"{s.get('disk_pct', 0):.1f}"} for s in top_disk]), use_container_width=True, hide_index=True)
         with mini3:
             st.markdown("**Recent 3 Alerts**")
-            recent_alerts = sorted(alerts, key=lambda a: a.get("triggered_at", ""), reverse=True)[:3]
-            st.dataframe(pd.DataFrame([{"Server": a.get("server", "—"), "Severity": a.get("severity", "—"), "Status": a.get("status", "—")} for a in recent_alerts]), use_container_width=True, hide_index=True)
+            if hasattr(alerts, "columns") and not alerts.empty:
+                recent_alerts = alerts.sort_values("opened", ascending=False).head(3)[["server", "severity", "status"]].rename(columns={"server": "Server", "severity": "Severity", "status": "Status"})
+                st.dataframe(recent_alerts, use_container_width=True, hide_index=True)
+            else:
+                st.caption("No alerts.")
 
     with tabs[1]:
         REPORT_CARDS = [
@@ -2541,9 +2548,9 @@ def view_ops_reporting(*, client, snapshots, alerts, backups, seed, role, **_):
                     if title == "Fleet Health Summary":
                         csv_data = pd.DataFrame([{k: s.get(k, "—") for k in ["name", "db_type", "role", "region", "status", "cpu_pct", "mem_pct", "disk_pct", "uptime_pct_30d"]} for s in snapshots]).to_csv(index=False)
                     elif title == "Backup Coverage Report":
-                        csv_data = pd.DataFrame(backups).to_csv(index=False) if backups else "server,status,timestamp\n"
+                        csv_data = (backups.to_csv(index=False) if (hasattr(backups, "to_csv") and not backups.empty) else "server,status,timestamp\n")
                     elif title == "Alert Activity Report":
-                        csv_data = pd.DataFrame(alerts).to_csv(index=False) if alerts else "server,severity,status\n"
+                        csv_data = (alerts.to_csv(index=False) if (hasattr(alerts, "to_csv") and not alerts.empty) else "server,severity,status\n")
                     else:
                         csv_data = pd.DataFrame([{"Server": s["name"], "CPU %": s.get("cpu_pct"), "Mem %": s.get("mem_pct"), "Disk %": s.get("disk_pct")} for s in snapshots]).to_csv(index=False)
                     st.download_button("Download CSV", data=csv_data, file_name=f"{title.lower().replace(' ', '_')}.csv", mime="text/csv", key=f"rpt_{title[:8]}")
@@ -2552,9 +2559,10 @@ def view_ops_reporting(*, client, snapshots, alerts, backups, seed, role, **_):
     with tabs[2]:
         st.markdown("#### Key Metric Trends vs Previous Period")
         st.caption("Simulated trend data — connect a time-series store for real historical comparison.")
+        alert_count = len(alerts) if hasattr(alerts, "__len__") else 0
         TRENDS = [
             ("Fleet Availability",    f"{avg_uptime}%",   rng.choice(["↑", "↑", "→"]), "#22c55e"),
-            ("Alert Volume",          str(len(alerts)),    rng.choice(["↓", "↓", "→"]), "#22c55e"),
+            ("Alert Volume",          str(alert_count),   rng.choice(["↓", "↓", "→"]), "#22c55e"),
             ("Avg Query Latency",     f"{round(sum(s.get('query_latency_ms', 0) for s in snapshots)/max(len(snapshots),1), 1)} ms", rng.choice(["↑", "→", "↓"]), "#f59e0b"),
             ("Backup Success Rate",   f"{backup_success_rate}%", rng.choice(["↑", "→"]), "#22c55e"),
             ("Avg Disk Utilisation",  f"{round(sum(s.get('disk_pct', 0) for s in snapshots)/max(len(snapshots),1), 1)}%", rng.choice(["↑", "→"]), "#f59e0b"),
@@ -2573,11 +2581,11 @@ def view_ops_reporting(*, client, snapshots, alerts, backups, seed, role, **_):
             st.download_button("Full Fleet Export CSV", data=fleet_csv, file_name="fleet_export.csv", mime="text/csv", use_container_width=True)
             st.caption(f"{len(snapshots)} servers")
         with e2:
-            alerts_csv = pd.DataFrame(alerts).to_csv(index=False) if alerts else "no data\n"
+            alerts_csv = (alerts.to_csv(index=False) if (hasattr(alerts, "to_csv") and not alerts.empty) else "no data\n")
             st.download_button("Alerts Export CSV", data=alerts_csv, file_name="alerts_export.csv", mime="text/csv", use_container_width=True)
             st.caption(f"{len(alerts)} alerts")
         with e3:
-            backups_csv = pd.DataFrame(backups).to_csv(index=False) if backups else "no data\n"
+            backups_csv = (backups.to_csv(index=False) if (hasattr(backups, "to_csv") and not backups.empty) else "no data\n")
             st.download_button("Backup Log CSV", data=backups_csv, file_name="backup_log.csv", mime="text/csv", use_container_width=True)
             st.caption(f"{len(backups)} backup records")
 
