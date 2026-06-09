@@ -5,6 +5,7 @@ Shared components (messaging, email, tickets, reports) are called by the
 views that need them. ROLE_VIEW maps role name → view function for dispatch.
 """
 
+import base64
 import io
 import random
 from datetime import datetime, timedelta
@@ -318,101 +319,250 @@ _ROLE_COLOR = {
     "Data Analyst":             "#2dd4bf",
 }
 
+_CH_ICON = {
+    "general":           "📢",
+    "incidents":         "🚨",
+    "operations":        "⚙️",
+    "database":          "🗄️",
+    "development":       "💻",
+    "deployments":       "🚀",
+    "security":          "🔒",
+    "backups-dr":        "💾",
+    "client-updates":    "👥",
+    "reports-analytics": "📊",
+    "on-call":           "📱",
+    "infrastructure":    "🏗️",
+}
+
+_IMAGE_MIMES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"}
+_MAX_FILE_MB = 5
+
+
+def _role_avatar(role: str) -> str:
+    parts = role.split()
+    return (parts[0][0] + parts[-1][0]).upper() if len(parts) >= 2 else role[:2].upper()
+
+
+def _fmt_size(n: int) -> str:
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024 ** 2:
+        return f"{n/1024:.1f} KB"
+    return f"{n/1024**2:.1f} MB"
+
 
 def render_channels(current_role: str):
-    info_card(
-        title="Team Channels",
-        note="Public group messaging — every role can read and post in any channel. "
-             "Messages are visible to the whole team and persist across sessions.",
-    )
-
+    # ── session init ────────────────────────────────────────────────────
     if "ch_selected" not in st.session_state:
         st.session_state.ch_selected = store.CHANNELS[0]["id"]
+    if "ch_last_seen" not in st.session_state:
+        st.session_state.ch_last_seen = {}
 
+    # ── layout ──────────────────────────────────────────────────────────
     col_list, col_msgs = st.columns([1, 3], gap="medium")
 
+    # ── channel list sidebar ────────────────────────────────────────────
     with col_list:
-        st.markdown("**Channels**")
-        st.divider()
+        st.markdown(
+            '<div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;'
+            'letter-spacing:0.1em;color:#475569;margin-bottom:10px;">Team Channels</div>',
+            unsafe_allow_html=True,
+        )
         for ch in store.CHANNELS:
             msgs = store.get_channel_messages(ch["id"])
-            last = msgs[-1] if msgs else None
+            last_seen = st.session_state.ch_last_seen.get(ch["id"], 0)
+            unread = max(0, len(msgs) - last_seen)
             is_active = st.session_state.ch_selected == ch["id"]
+            icon = _CH_ICON.get(ch["id"], "#")
 
-            label_lines = [ch["name"]]
-            if last:
-                preview = last["text"]
-                label_lines.append(f"{last['from'][:14]}: {preview[:22]}{'…' if len(preview) > 22 else ''}")
-            else:
-                label_lines.append("No messages yet")
+            # last-message preview
+            preview_line = ""
+            if msgs:
+                lm = msgs[-1]
+                preview_text = lm.get("text") or ("📎 " + lm["attachment"]["name"] if lm.get("attachment") else "")
+                sender = lm["from"].split()[0]
+                trimmed = preview_text[:24] + ("…" if len(preview_text) > 24 else "")
+                preview_line = f"{sender}: {trimmed}"
+
+            badge = f' <span style="background:#ef4444;color:#fff;border-radius:999px;padding:0 5px;font-size:0.65rem;font-weight:700;">{unread}</span>' if unread and not is_active else ""
+            label = f"{icon} {ch['name']}{badge}"
 
             if st.button(
-                "\n".join(label_lines),
+                label,
                 key=f"ch_btn_{ch['id']}",
                 type="primary" if is_active else "secondary",
-                width="stretch",
+                use_container_width=True,
+                help=ch["desc"],
             ):
                 st.session_state.ch_selected = ch["id"]
+                st.session_state.ch_last_seen[ch["id"]] = len(msgs)
                 st.rerun()
 
+            if preview_line:
+                st.markdown(
+                    f'<div style="font-size:0.67rem;color:#475569;margin:-4px 0 4px 4px;'
+                    f'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">{preview_line}</div>',
+                    unsafe_allow_html=True,
+                )
+
+    # ── message panel ───────────────────────────────────────────────────
     with col_msgs:
         sel_id = st.session_state.ch_selected
         sel_ch = next((c for c in store.CHANNELS if c["id"] == sel_id), store.CHANNELS[0])
-
-        st.markdown(f"**{sel_ch['name']}**")
-        st.caption(sel_ch["desc"])
-
         msgs = store.get_channel_messages(sel_id)
+        st.session_state.ch_last_seen[sel_id] = len(msgs)  # mark seen on view
+        icon = _CH_ICON.get(sel_id, "#")
 
-        bubbles = ""
-        if not msgs:
-            bubbles = (
-                '<div style="color:#64748b;font-size:0.84rem;text-align:center;padding:48px 0;">'
-                f'No messages in {sel_ch["name"]} yet — start the conversation!</div>'
+        # header row
+        hc1, hc2 = st.columns([5, 1])
+        with hc1:
+            st.markdown(
+                f'<div style="font-size:1.05rem;font-weight:700;color:#e2e8f0;">'
+                f'{icon} {sel_ch["name"]}</div>'
+                f'<div style="font-size:0.78rem;color:#64748b;margin-top:1px;">{sel_ch["desc"]}</div>',
+                unsafe_allow_html=True,
             )
-        for m in msgs[-80:]:
+        with hc2:
+            st.markdown(
+                f'<div style="text-align:right;font-size:0.72rem;color:#475569;padding-top:6px;">'
+                f'👥 {len(ALL_ROLES)}&nbsp;members&nbsp;&nbsp;💬&nbsp;{len(msgs)}</div>',
+                unsafe_allow_html=True,
+            )
+        st.markdown('<hr style="border-color:#1e293b;margin:6px 0 10px;">', unsafe_allow_html=True)
+
+        # ── bubbles ──────────────────────────────────────────────────────
+        bubbles_html = ""
+        if not msgs:
+            bubbles_html = (
+                f'<div style="display:flex;flex-direction:column;align-items:center;'
+                f'justify-content:center;height:100%;padding:48px 0;">'
+                f'<div style="font-size:2.2rem;margin-bottom:10px;">{icon}</div>'
+                f'<div style="color:#475569;font-size:0.9rem;font-weight:600;">No messages yet</div>'
+                f'<div style="color:#334155;font-size:0.78rem;margin-top:4px;">'
+                f'Be the first to post in {sel_ch["name"]}!</div></div>'
+            )
+
+        for m in msgs[-100:]:
             is_mine = m["from"] == current_role
-            role_color = _ROLE_COLOR.get(m["from"], "#94a3b8")
+            rc = _ROLE_COLOR.get(m["from"], "#94a3b8")
+            initials = _role_avatar(m["from"])
+            flex_dir = "row-reverse" if is_mine else "row"
             align = "flex-end" if is_mine else "flex-start"
-            bg    = "rgba(34,211,238,0.07)" if is_mine else "#111827"
-            border = "1px solid rgba(34,211,238,0.22)" if is_mine else "1px solid #1f2940"
-            ta    = "right" if is_mine else "left"
-            bubbles += (
-                f'<div style="align-self:{align};max-width:80%;margin-bottom:6px;">'
-                f'<div style="color:{role_color};font-size:0.71rem;font-weight:700;'
-                f'margin-bottom:2px;text-align:{ta};">{m["from"]}</div>'
-                f'<div style="background:{bg};border:{border};border-radius:10px;'
-                f'padding:8px 13px;color:#cbd5e1;font-size:0.85rem;line-height:1.5;">{m["text"]}</div>'
-                f'<div style="color:#475569;font-size:0.7rem;margin-top:2px;text-align:{ta};">'
-                f'{m["ts"][:10]} {m["ts"][11:16]}</div>'
+            br = "12px 4px 12px 12px" if is_mine else "4px 12px 12px 12px"
+            bg = "rgba(34,211,238,0.07)" if is_mine else "rgba(15,23,42,0.9)"
+            bd = "1px solid rgba(34,211,238,0.18)" if is_mine else "1px solid #1e293b"
+
+            ts = m.get("ts", "")
+            now_date = datetime.now().strftime("%Y-%m-%d")
+            time_str = ts[11:16] if len(ts) >= 16 else ""
+            date_str = ts[:10] if len(ts) >= 10 else ""
+            time_display = time_str if date_str == now_date else f"{date_str} {time_str}"
+
+            # attachment HTML
+            att_html = ""
+            att = m.get("attachment")
+            if att:
+                if att.get("mime", "") in _IMAGE_MIMES:
+                    att_html = (
+                        f'<div style="margin-top:7px;">'
+                        f'<img src="data:{att["mime"]};base64,{att["data_b64"]}" '
+                        f'style="max-width:260px;max-height:260px;border-radius:8px;'
+                        f'display:block;border:1px solid rgba(255,255,255,0.08);" />'
+                        f'<div style="font-size:0.67rem;color:#475569;margin-top:3px;">'
+                        f'🖼 {att["name"]} · {_fmt_size(att.get("size", 0))}</div></div>'
+                    )
+                else:
+                    att_html = (
+                        f'<div style="margin-top:7px;background:rgba(255,255,255,0.04);'
+                        f'border:1px solid rgba(255,255,255,0.09);border-radius:8px;'
+                        f'padding:8px 12px;display:inline-flex;align-items:center;gap:10px;">'
+                        f'<span style="font-size:1.5rem;">📎</span>'
+                        f'<div><div style="font-size:0.82rem;color:#e2e8f0;font-weight:600;">'
+                        f'{att["name"]}</div>'
+                        f'<div style="font-size:0.69rem;color:#64748b;">'
+                        f'{_fmt_size(att.get("size", 0))}</div></div></div>'
+                    )
+
+            text_html = (
+                f'<div style="color:#cbd5e1;font-size:0.85rem;line-height:1.55;word-break:break-word;">'
+                f'{m["text"]}</div>'
+            ) if m.get("text") else ""
+
+            ta_name = "right" if is_mine else "left"
+            bubbles_html += (
+                f'<div style="display:flex;flex-direction:{flex_dir};align-items:flex-start;'
+                f'gap:8px;margin-bottom:12px;align-self:{align};max-width:84%;">'
+                # avatar circle
+                f'<div style="flex-shrink:0;width:34px;height:34px;border-radius:50%;'
+                f'background:{rc}1a;border:2px solid {rc};display:flex;'
+                f'align-items:center;justify-content:center;'
+                f'font-size:0.6rem;font-weight:800;color:{rc};">{initials}</div>'
+                # content
+                f'<div style="flex:1;min-width:0;">'
+                f'<div style="font-size:0.7rem;font-weight:700;color:{rc};'
+                f'margin-bottom:3px;text-align:{ta_name};">'
+                f'{m["from"]} <span style="color:#475569;font-weight:400;font-size:0.67rem;">'
+                f'{time_display}</span></div>'
+                f'<div style="background:{bg};border:{bd};border-radius:{br};padding:9px 13px;">'
+                f'{text_html}{att_html}</div>'
+                f'</div>'
                 f'</div>'
             )
 
         st.markdown(
-            f'<div style="height:380px;overflow-y:auto;display:flex;flex-direction:column;'
-            f'gap:4px;padding:14px;background:#0a0e1a;border:1px solid #1f2940;'
-            f'border-radius:8px;margin-bottom:10px;">{bubbles}</div>',
+            f'<div style="height:430px;overflow-y:auto;display:flex;flex-direction:column;'
+            f'padding:16px;background:linear-gradient(180deg,#06090f 0%,#080d1a 100%);'
+            f'border:1px solid #1e293b;border-radius:10px;margin-bottom:12px;">'
+            f'{bubbles_html}</div>',
             unsafe_allow_html=True,
         )
 
-        with st.form(f"ch_post_{current_role}_{sel_id}", clear_on_submit=True):
-            rc1, rc2 = st.columns([5, 1], vertical_alignment="bottom")
-            with rc1:
-                msg_text = st.text_input(
-                    "Post",
-                    placeholder=f"Post in {sel_ch['name']}…",
+        # ── compose form ──────────────────────────────────────────────
+        with st.container(border=True):
+            with st.form(f"ch_compose_{sel_id}", clear_on_submit=True):
+                msg_text = st.text_area(
+                    "message",
+                    placeholder=f"Message {sel_ch['name']}…",
                     label_visibility="collapsed",
+                    height=68,
                 )
-            with rc2:
-                submitted = st.form_submit_button(
-                    "Send", icon=":material/send:", type="primary", width="stretch",
+                attach_file = st.file_uploader(
+                    "Attach file or image (optional)",
+                    type=["png", "jpg", "jpeg", "gif", "webp",
+                          "pdf", "csv", "xlsx", "txt", "log", "json", "zip"],
+                    help=f"Images display inline · Max {_MAX_FILE_MB} MB",
+                    label_visibility="visible",
                 )
-            if submitted:
-                if msg_text.strip():
-                    store.post_to_channel(current_role, sel_id, msg_text.strip())
-                    st.rerun()
-                else:
-                    st.warning("Write something before posting.")
+                fc1, fc2 = st.columns([5, 1])
+                with fc1:
+                    if attach_file:
+                        st.caption(f"📎 {attach_file.name} · {_fmt_size(attach_file.size)}")
+                with fc2:
+                    submitted = st.form_submit_button(
+                        "Send", icon=":material/send:", type="primary", use_container_width=True,
+                    )
+                if submitted:
+                    if not (msg_text and msg_text.strip()) and attach_file is None:
+                        st.warning("Write a message or attach a file.")
+                    else:
+                        attachment = None
+                        if attach_file is not None:
+                            if attach_file.size > _MAX_FILE_MB * 1024 * 1024:
+                                st.error(f"File exceeds {_MAX_FILE_MB} MB limit. Choose a smaller file.")
+                            else:
+                                raw = attach_file.read()
+                                attachment = {
+                                    "name": attach_file.name,
+                                    "mime": attach_file.type or "application/octet-stream",
+                                    "data_b64": base64.b64encode(raw).decode(),
+                                    "size": attach_file.size,
+                                }
+                        store.post_to_channel(
+                            current_role, sel_id,
+                            (msg_text or "").strip(),
+                            attachment=attachment,
+                        )
+                        st.rerun()
 
 
 def render_email_composer(current_role: str, client=None, snapshots=None, alerts=None):

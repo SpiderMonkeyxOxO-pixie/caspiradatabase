@@ -159,14 +159,17 @@ def add_note(ticket_id: str, author: str, note_text: str) -> None:
 # Channels (public group messages)
 # ---------------------------------------------------------------------------
 
-def post_to_channel(role: str, channel_id: str, text: str) -> None:
+def post_to_channel(role: str, channel_id: str, text: str, attachment: dict = None) -> None:
     s = get()
-    s["channels"].setdefault(channel_id, []).append({
+    msg = {
         "id": str(uuid.uuid4())[:8],
         "from": role,
         "text": text,
         "ts": datetime.now().isoformat(timespec="seconds"),
-    })
+    }
+    if attachment:
+        msg["attachment"] = attachment
+    s["channels"].setdefault(channel_id, []).append(msg)
     _flush()
 
 
