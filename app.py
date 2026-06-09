@@ -50,7 +50,8 @@ header[data-testid="stHeader"] {
     height: 2.6rem; min-height: 2.6rem;
 }
 header[data-testid="stHeader"] [data-testid="stToolbarActions"],
-header[data-testid="stHeader"] [data-testid="stMainMenu"] { display: none; }
+header[data-testid="stHeader"] [data-testid="stMainMenu"],
+[data-testid="stDeployButton"] { display: none !important; }
 header[data-testid="stHeader"] [data-testid="stSidebarCollapseButton"],
 [data-testid="collapsedControl"] { display: flex !important; visibility: visible !important; }
 

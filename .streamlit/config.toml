@@ -11,3 +11,7 @@ headless = true
 
 [browser]
 gatherUsageStats = false
+
+[ui]
+hideTopBar = false
+showSidebarNavigation = false
