@@ -306,90 +306,113 @@ def _gen_security_checklist(seed_str: str, snapshots: list) -> list:
 # SHARED COMPONENTS
 # ============================================================
 
-def render_messaging(current_role: str):
+_ROLE_COLOR = {
+    "General Manager":          "#f59e0b",
+    "Monitoring":               "#22d3ee",
+    "Data Operation Specialist": "#34d399",
+    "I.T Assistant":            "#60a5fa",
+    "Back-end Developer":       "#a78bfa",
+    "Dev-Ops":                  "#fb923c",
+    "Infrastructure Engineer":  "#f87171",
+    "Customer Service":         "#f472b6",
+    "Data Analyst":             "#2dd4bf",
+}
+
+
+def render_channels(current_role: str):
     info_card(
-        title="Internal Messaging",
-        note="Private threads between roles — messages are stored locally and persist across sessions.",
+        title="Team Channels",
+        note="Public group messaging — every role can read and post in any channel. "
+             "Messages are visible to the whole team and persist across sessions.",
     )
-    if "msg_selected" not in st.session_state:
-        inbox = store.get_inbox(current_role)
-        st.session_state.msg_selected = inbox[0]["other"] if inbox else None
 
-    col_inbox, col_thread = st.columns([1, 2], gap="medium")
+    if "ch_selected" not in st.session_state:
+        st.session_state.ch_selected = store.CHANNELS[0]["id"]
 
-    with col_inbox:
-        st.markdown("**Inbox**")
-        with st.popover("New conversation", icon=":material/edit:", width="stretch"):
-            recipient = st.selectbox(
-                "Send to",
-                [r for r in ALL_ROLES if r != current_role],
-                key=f"msg_new_recipient_{current_role}",
-            )
-            msg_draft = st.text_area("Message", key=f"msg_new_text_{current_role}", height=80)
-            if st.button("Send", icon=":material/send:", type="primary", key=f"msg_new_send_{current_role}"):
-                if msg_draft.strip():
-                    store.send_message(current_role, recipient, msg_draft.strip())
-                    st.session_state.msg_selected = recipient
-                    st.rerun()
-                else:
-                    st.warning("Write a message first.")
+    col_list, col_msgs = st.columns([1, 3], gap="medium")
+
+    with col_list:
+        st.markdown("**Channels**")
         st.divider()
-        inbox = store.get_inbox(current_role)
-        if not inbox:
-            st.caption("No conversations yet — start one above.")
-        else:
-            for thread in inbox:
-                btn_type = "primary" if st.session_state.msg_selected == thread["other"] else "secondary"
-                preview = ""
-                if thread["last"]:
-                    txt = thread["last"]["text"]
-                    preview = f"\n{txt[:38]}{'…' if len(txt) > 38 else ''}"
-                if st.button(
-                    f"{thread['other']}{preview}",
-                    key=f"inbox_btn_{current_role}_{thread['other']}",
-                    width="stretch",
-                    type=btn_type,
-                ):
-                    st.session_state.msg_selected = thread["other"]
-                    st.rerun()
+        for ch in store.CHANNELS:
+            msgs = store.get_channel_messages(ch["id"])
+            last = msgs[-1] if msgs else None
+            is_active = st.session_state.ch_selected == ch["id"]
 
-    with col_thread:
-        selected_peer = st.session_state.msg_selected
-        if not selected_peer:
-            st.info("Select a conversation or start a new one.")
-            return
-        st.markdown(f"**Thread with {selected_peer}**")
-        thread_msgs = store.get_thread(current_role, selected_peer)
+            label_lines = [ch["name"]]
+            if last:
+                preview = last["text"]
+                label_lines.append(f"{last['from'][:14]}: {preview[:22]}{'…' if len(preview) > 22 else ''}")
+            else:
+                label_lines.append("No messages yet")
+
+            if st.button(
+                "\n".join(label_lines),
+                key=f"ch_btn_{ch['id']}",
+                type="primary" if is_active else "secondary",
+                width="stretch",
+            ):
+                st.session_state.ch_selected = ch["id"]
+                st.rerun()
+
+    with col_msgs:
+        sel_id = st.session_state.ch_selected
+        sel_ch = next((c for c in store.CHANNELS if c["id"] == sel_id), store.CHANNELS[0])
+
+        st.markdown(f"**{sel_ch['name']}**")
+        st.caption(sel_ch["desc"])
+
+        msgs = store.get_channel_messages(sel_id)
+
         bubbles = ""
-        if not thread_msgs:
-            bubbles = '<div style="color:#64748b;font-size:0.84rem;text-align:center;padding:40px 0;">No messages yet — say hello!</div>'
-        for m in thread_msgs:
+        if not msgs:
+            bubbles = (
+                '<div style="color:#64748b;font-size:0.84rem;text-align:center;padding:48px 0;">'
+                f'No messages in {sel_ch["name"]} yet — start the conversation!</div>'
+            )
+        for m in msgs[-80:]:
             is_mine = m["from"] == current_role
+            role_color = _ROLE_COLOR.get(m["from"], "#94a3b8")
             align = "flex-end" if is_mine else "flex-start"
-            bg = "rgba(34,211,238,0.10)" if is_mine else "#1a2338"
-            border = "1px solid rgba(34,211,238,0.28)" if is_mine else "1px solid #1f2940"
-            ta = "right" if is_mine else "left"
+            bg    = "rgba(34,211,238,0.07)" if is_mine else "#111827"
+            border = "1px solid rgba(34,211,238,0.22)" if is_mine else "1px solid #1f2940"
+            ta    = "right" if is_mine else "left"
             bubbles += (
-                f'<div style="align-self:{align};max-width:76%;margin-bottom:4px;">'
-                f'<div style="background:{bg};border:{border};border-radius:10px;padding:8px 13px;color:#cbd5e1;font-size:0.85rem;">{m["text"]}</div>'
-                f'<div style="color:#64748b;font-size:0.7rem;margin-top:2px;text-align:{ta};">{m["from"]} · {m["ts"][11:16]}</div>'
+                f'<div style="align-self:{align};max-width:80%;margin-bottom:6px;">'
+                f'<div style="color:{role_color};font-size:0.71rem;font-weight:700;'
+                f'margin-bottom:2px;text-align:{ta};">{m["from"]}</div>'
+                f'<div style="background:{bg};border:{border};border-radius:10px;'
+                f'padding:8px 13px;color:#cbd5e1;font-size:0.85rem;line-height:1.5;">{m["text"]}</div>'
+                f'<div style="color:#475569;font-size:0.7rem;margin-top:2px;text-align:{ta};">'
+                f'{m["ts"][:10]} {m["ts"][11:16]}</div>'
                 f'</div>'
             )
+
         st.markdown(
-            f'<div style="height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;'
-            f'padding:14px;background:#0a0e1a;border:1px solid #1f2940;border-radius:8px;margin-bottom:10px;">'
-            f'{bubbles}</div>',
+            f'<div style="height:380px;overflow-y:auto;display:flex;flex-direction:column;'
+            f'gap:4px;padding:14px;background:#0a0e1a;border:1px solid #1f2940;'
+            f'border-radius:8px;margin-bottom:10px;">{bubbles}</div>',
             unsafe_allow_html=True,
         )
-        with st.form(f"reply_form_{current_role}_{selected_peer}", clear_on_submit=True):
-            reply = st.text_input(
-                "Reply", placeholder=f"Message {selected_peer}…",
-                label_visibility="collapsed", key=f"reply_input_{current_role}",
-            )
-            if st.form_submit_button("Send", icon=":material/send:", type="primary"):
-                if reply.strip():
-                    store.send_message(current_role, selected_peer, reply.strip())
+
+        with st.form(f"ch_post_{current_role}_{sel_id}", clear_on_submit=True):
+            rc1, rc2 = st.columns([5, 1], vertical_alignment="bottom")
+            with rc1:
+                msg_text = st.text_input(
+                    "Post",
+                    placeholder=f"Post in {sel_ch['name']}…",
+                    label_visibility="collapsed",
+                )
+            with rc2:
+                submitted = st.form_submit_button(
+                    "Send", icon=":material/send:", type="primary", width="stretch",
+                )
+            if submitted:
+                if msg_text.strip():
+                    store.post_to_channel(current_role, sel_id, msg_text.strip())
                     st.rerun()
+                else:
+                    st.warning("Write something before posting.")
 
 
 def render_email_composer(current_role: str, client=None, snapshots=None, alerts=None):
@@ -940,7 +963,7 @@ def _toolkit_panel():
 
 def view_general_manager(client, snapshots, alerts, backups, maintenance,
                           histories, servers, seed, live_mode, server_names, window_hours):
-    tabs = st.tabs(["Executive Overview", "Reports", "Email", "Messaging"])
+    tabs = st.tabs(["Executive Overview", "Reports", "Email", "Channels"])
 
     with tabs[0]:
         info_card(
@@ -997,12 +1020,12 @@ def view_general_manager(client, snapshots, alerts, backups, maintenance,
         render_email_composer("General Manager", client=client, snapshots=snapshots, alerts=alerts)
 
     with tabs[3]:
-        render_messaging("General Manager")
+        render_channels("General Manager")
 
 
 def view_monitoring(client, snapshots, alerts, backups, maintenance,
                     histories, servers, seed, live_mode, server_names, window_hours):
-    tabs = st.tabs(["Operations Center", "Incidents", "On-Call", "Reports", "Messaging"])
+    tabs = st.tabs(["Operations Center", "Incidents", "On-Call", "Reports", "Channels"])
 
     with tabs[0]:
         info_card(
@@ -1054,12 +1077,12 @@ def view_monitoring(client, snapshots, alerts, backups, maintenance,
         render_report_generator("Monitoring", snapshots, alerts, backups, histories, client)
 
     with tabs[4]:
-        render_messaging("Monitoring")
+        render_channels("Monitoring")
 
 
 def view_data_ops(client, snapshots, alerts, backups, maintenance,
                   histories, servers, seed, live_mode, server_names, window_hours):
-    tabs = st.tabs(["DB Performance", "Backups", "Maintenance", "Health Check", "Reports", "Messaging"])
+    tabs = st.tabs(["DB Performance", "Backups", "Maintenance", "Health Check", "Reports", "Channels"])
 
     with tabs[0]:
         _server_detail_panel(servers, snapshots, histories, seed, live_mode, client)
@@ -1138,12 +1161,12 @@ def view_data_ops(client, snapshots, alerts, backups, maintenance,
         render_report_generator("Data Operation Specialist", snapshots, alerts, backups, histories, client)
 
     with tabs[5]:
-        render_messaging("Data Operation Specialist")
+        render_channels("Data Operation Specialist")
 
 
 def view_it_assistant(client, snapshots, alerts, backups, maintenance,
                       histories, servers, seed, live_mode, server_names, window_hours):
-    tabs = st.tabs(["Help Desk", "Server Status", "Runbooks", "Email", "Messaging"])
+    tabs = st.tabs(["Help Desk", "Server Status", "Runbooks", "Email", "Channels"])
 
     with tabs[0]:
         render_ticket_system("I.T Assistant", mode="full")
@@ -1178,12 +1201,12 @@ def view_it_assistant(client, snapshots, alerts, backups, maintenance,
         render_email_composer("I.T Assistant", client=client, snapshots=snapshots, alerts=alerts)
 
     with tabs[4]:
-        render_messaging("I.T Assistant")
+        render_channels("I.T Assistant")
 
 
 def view_backend_dev(client, snapshots, alerts, backups, maintenance,
                      histories, servers, seed, live_mode, server_names, window_hours):
-    tabs = st.tabs(["Query Runner", "Schema Explorer", "Service Health", "Messaging"])
+    tabs = st.tabs(["Query Runner", "Schema Explorer", "Service Health", "Channels"])
 
     with tabs[0]:
         with st.container(border=True):
@@ -1256,12 +1279,12 @@ def view_backend_dev(client, snapshots, alerts, backups, maintenance,
             st.dataframe(styled_sh, hide_index=True, width="stretch")
 
     with tabs[3]:
-        render_messaging("Back-end Developer")
+        render_channels("Back-end Developer")
 
 
 def view_devops(client, snapshots, alerts, backups, maintenance,
                 histories, servers, seed, live_mode, server_names, window_hours):
-    tabs = st.tabs(["Deployments", "Pipeline", "Config Drift", "Toolkit", "Reports", "Messaging"])
+    tabs = st.tabs(["Deployments", "Pipeline", "Config Drift", "Toolkit", "Reports", "Channels"])
 
     with tabs[0]:
         with st.container(border=True):
@@ -1316,12 +1339,12 @@ def view_devops(client, snapshots, alerts, backups, maintenance,
         render_report_generator("Dev-Ops", snapshots, alerts, backups, histories, client)
 
     with tabs[5]:
-        render_messaging("Dev-Ops")
+        render_channels("Dev-Ops")
 
 
 def view_infra_engineer(client, snapshots, alerts, backups, maintenance,
                         histories, servers, seed, live_mode, server_names, window_hours):
-    tabs = st.tabs(["Fleet", "Capacity Planning", "DR Status", "Security", "Reports", "Messaging"])
+    tabs = st.tabs(["Fleet", "Capacity Planning", "DR Status", "Security", "Reports", "Channels"])
 
     with tabs[0]:
         _fleet_panel(snapshots, server_names, alerts)
@@ -1403,12 +1426,12 @@ def view_infra_engineer(client, snapshots, alerts, backups, maintenance,
         render_report_generator("Infrastructure Engineer", snapshots, alerts, backups, histories, client)
 
     with tabs[5]:
-        render_messaging("Infrastructure Engineer")
+        render_channels("Infrastructure Engineer")
 
 
 def view_customer_service(client, snapshots, alerts, backups, maintenance,
                            histories, servers, seed, live_mode, server_names, window_hours):
-    tabs = st.tabs(["Service Status", "Tickets", "Email", "Messaging"])
+    tabs = st.tabs(["Service Status", "Tickets", "Email", "Channels"])
 
     with tabs[0]:
         info_card(
@@ -1471,12 +1494,12 @@ def view_customer_service(client, snapshots, alerts, backups, maintenance,
         render_email_composer("Customer Service", client=client, snapshots=snapshots, alerts=alerts)
 
     with tabs[3]:
-        render_messaging("Customer Service")
+        render_channels("Customer Service")
 
 
 def view_data_analyst(client, snapshots, alerts, backups, maintenance,
                       histories, servers, seed, live_mode, server_names, window_hours):
-    tabs = st.tabs(["Analytics", "Report Builder", "Export", "Messaging"])
+    tabs = st.tabs(["Analytics", "Report Builder", "Export", "Channels"])
 
     with tabs[0]:
         info_card(
@@ -1584,7 +1607,7 @@ def view_data_analyst(client, snapshots, alerts, backups, maintenance,
                     )
 
     with tabs[3]:
-        render_messaging("Data Analyst")
+        render_channels("Data Analyst")
 
 
 # ============================================================

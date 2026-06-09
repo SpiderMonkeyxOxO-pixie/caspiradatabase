@@ -16,7 +16,23 @@ _DEFAULT: dict = {
     "messages": {},
     "tickets": [],
     "emails": [],
+    "channels": {},
 }
+
+CHANNELS = [
+    {"id": "general",           "name": "#general",            "desc": "Company-wide announcements and general discussion"},
+    {"id": "incidents",         "name": "#incidents",           "desc": "Active incident response and real-time coordination"},
+    {"id": "operations",        "name": "#operations",          "desc": "Day-to-day ops — uptime, runbooks and shift handoffs"},
+    {"id": "database",          "name": "#database",            "desc": "Database administration, queries and schema changes"},
+    {"id": "development",       "name": "#development",         "desc": "Back-end and application development topics"},
+    {"id": "deployments",       "name": "#deployments",         "desc": "Release announcements and CI/CD pipeline status"},
+    {"id": "security",          "name": "#security",            "desc": "Security events, compliance checks and access changes"},
+    {"id": "backups-dr",        "name": "#backups-dr",          "desc": "Backup status, restore tests and DR coordination"},
+    {"id": "client-updates",    "name": "#client-updates",      "desc": "Client communications, SLA updates and account news"},
+    {"id": "reports-analytics", "name": "#reports-analytics",   "desc": "Shared reports, dashboards and data insights"},
+    {"id": "on-call",           "name": "#on-call",             "desc": "On-call handoffs, escalations and schedule changes"},
+    {"id": "infrastructure",    "name": "#infrastructure",      "desc": "Cloud infrastructure, capacity planning and provisioning"},
+]
 
 
 def _load() -> dict:
@@ -128,6 +144,29 @@ def add_note(ticket_id: str, author: str, note_text: str) -> None:
             })
             t["updated_at"] = datetime.now().isoformat(timespec="seconds")
     _flush()
+
+
+# ---------------------------------------------------------------------------
+# Emails
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Channels (public group messages)
+# ---------------------------------------------------------------------------
+
+def post_to_channel(role: str, channel_id: str, text: str) -> None:
+    s = get()
+    s["channels"].setdefault(channel_id, []).append({
+        "id": str(uuid.uuid4())[:8],
+        "from": role,
+        "text": text,
+        "ts": datetime.now().isoformat(timespec="seconds"),
+    })
+    _flush()
+
+
+def get_channel_messages(channel_id: str) -> list:
+    return get()["channels"].get(channel_id, [])
 
 
 # ---------------------------------------------------------------------------
