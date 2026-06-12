@@ -54,6 +54,13 @@ TICKET_STATUS_STYLE = {
 }
 BADGE_CSS = "padding:2px 9px;border-radius:2em;font-size:0.68rem;font-weight:700;letter-spacing:0.04em;"
 
+CHART_PALETTE = ["#22d3ee", "#8b5cf6", "#34d399", "#f59e0b", "#ef4444", "#a78bfa"]
+
+
+def _chart_colors(n: int) -> list:
+    """Cycle the chart palette to cover `n` series (fleets can exceed the base palette size)."""
+    return [CHART_PALETTE[i % len(CHART_PALETTE)] for i in range(n)]
+
 ALL_ROLES = [
     "General Manager", "Monitoring", "Data Operation Specialist",
     "I.T Assistant", "Back-end Developer", "Dev-Ops",
@@ -1626,7 +1633,7 @@ def view_infra_engineer(client, snapshots, alerts, backups, maintenance,
             st.caption("Projection based on observed daily growth rate from the telemetry window.")
             st.line_chart(
                 pd.DataFrame({s["name"]: histories[s["name"]]["disk_pct"].values for s in snapshots}),
-                height=280, color=["#22d3ee", "#8b5cf6", "#34d399", "#f59e0b", "#ef4444", "#a78bfa"],
+                height=280, color=_chart_colors(len(snapshots)),
             )
 
     with tabs[2]:
@@ -1766,8 +1773,7 @@ def view_data_analyst(client, snapshots, alerts, backups, maintenance,
                 if s in histories
             })
             st.caption(f"**{metric_sel}** over the selected window — all selected servers overlaid")
-            st.line_chart(chart_data, height=320,
-                          color=["#22d3ee", "#8b5cf6", "#34d399", "#f59e0b", "#ef4444", "#a78bfa"][:len(srv_sel)])
+            st.line_chart(chart_data, height=320, color=_chart_colors(len(srv_sel)))
         else:
             st.info("Select at least one server above.")
 
