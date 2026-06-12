@@ -559,7 +559,13 @@ def _channel_compose(current_role: str):
                     "Send", icon=":material/send:", type="primary", width="stretch",
                 )
             if submitted:
-                if not (msg_text and msg_text.strip()) and attach_file is None:
+                if (msg_text or "").strip().lower() == "/clear":
+                    store.clear_channel(sel_id)
+                    st.session_state.pop(f"ch_msgs_{sel_id}", None)
+                    st.session_state.pop(f"ch_sig_{sel_id}", None)
+                    st.toast(f"Cleared {sel_ch['name']}.", icon=":material/delete_sweep:")
+                    st.rerun()
+                elif not (msg_text and msg_text.strip()) and attach_file is None:
                     st.warning("Write a message or attach a file.")
                 else:
                     attachment = None

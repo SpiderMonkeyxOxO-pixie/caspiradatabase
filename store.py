@@ -252,6 +252,13 @@ def post_to_channel(role: str, channel_id: str, text: str, attachment: dict = No
         st.error(f"Post failed: {e}")
 
 
+def clear_channel(channel_id: str) -> None:
+    try:
+        _sb().table("channel_messages").delete().eq("channel_id", channel_id).execute()
+    except Exception as e:
+        st.error(f"Clear failed: {e}")
+
+
 def get_channel_messages(channel_id: str) -> list:
     try:
         res = _sb().table("channel_messages").select("*").eq("channel_id", channel_id).order("ts").execute()
