@@ -17,32 +17,32 @@ CLIENTS = [
     {
         "name": "Autofix Sdn Bhd", "code": "autofix", "domain": "autofix.com.my",
         "industry": "Automotive Aftermarket Services", "hq": "Kuala Lumpur, Malaysia",
-        "tier": "Enterprise", "regions": ["APAC", "EMEA"],
+        "tier": "Enterprise", "regions": ["APAC", "EMEA"], "host_count": 16,
     },
     {
         "name": "Meridian Capital Group", "code": "meridian", "domain": "meridiancapital.com.sg",
         "industry": "Financial Services", "hq": "Singapore",
-        "tier": "Enterprise", "regions": ["APAC", "EMEA", "AMER"],
+        "tier": "Enterprise", "regions": ["APAC", "EMEA", "AMER"], "host_count": 21,
     },
     {
         "name": "Northbridge Logistics Pte Ltd", "code": "northbridge", "domain": "northbridgelogistics.com",
         "industry": "Logistics & Supply Chain", "hq": "Sydney, Australia",
-        "tier": "Mid-Market", "regions": ["APAC", "AMER"],
+        "tier": "Mid-Market", "regions": ["APAC", "AMER"], "host_count": 9,
     },
     {
         "name": "Solara Health Partners", "code": "solara", "domain": "solarahealth.com.my",
         "industry": "Healthcare Services", "hq": "Penang, Malaysia",
-        "tier": "Enterprise", "regions": ["APAC"],
+        "tier": "Enterprise", "regions": ["APAC"], "host_count": 13,
     },
     {
         "name": "Veltrix Manufacturing Co.", "code": "veltrix", "domain": "veltrix-mfg.com",
         "industry": "Industrial Manufacturing", "hq": "Ho Chi Minh City, Vietnam",
-        "tier": "Mid-Market", "regions": ["APAC", "EMEA"],
+        "tier": "Mid-Market", "regions": ["APAC", "EMEA"], "host_count": 11,
     },
     {
         "name": "Harborline Retail Group", "code": "harborline", "domain": "harborlineretail.co.id",
         "industry": "Retail & E-Commerce", "hq": "Jakarta, Indonesia",
-        "tier": "Growth", "regions": ["APAC", "LATAM"],
+        "tier": "Growth", "regions": ["APAC", "LATAM"], "host_count": 7,
     },
 ]
 
@@ -61,6 +61,8 @@ ENGINEERS = [
 
 # Server blueprint shared across clients — hostnames, IP addresses and region
 # placement are derived per client in build_fleet() so each account looks distinct.
+# Each client draws the first N entries (its host_count), so larger accounts
+# simply carry more of the secondary/scaling tier below.
 SERVER_BLUEPRINT = [
     {"name": "db-prod-01", "role": "Primary", "engine": "PostgreSQL", "version": "16.3",
      "os": "Ubuntu 22.04 LTS", "disk_capacity_gb": 2048, "base_load": 0.55},
@@ -74,6 +76,38 @@ SERVER_BLUEPRINT = [
      "os": "Ubuntu 22.04 LTS", "disk_capacity_gb": 1024, "base_load": 0.48},
     {"name": "redis-cache-01", "role": "Cache", "engine": "Redis", "version": "7.2.5",
      "os": "Ubuntu 22.04 LTS", "disk_capacity_gb": 256, "base_load": 0.40},
+    {"name": "db-prod-04", "role": "Replica", "engine": "PostgreSQL", "version": "16.3",
+     "os": "Ubuntu 22.04 LTS", "disk_capacity_gb": 1024, "base_load": 0.28},
+    {"name": "db-analytics-01", "role": "Replica", "engine": "PostgreSQL", "version": "16.3",
+     "os": "Ubuntu 22.04 LTS", "disk_capacity_gb": 2048, "base_load": 0.46},
+    {"name": "mysql-orders-02", "role": "Replica", "engine": "MySQL", "version": "8.0.37",
+     "os": "Red Hat Enterprise Linux 9", "disk_capacity_gb": 1536, "base_load": 0.41},
+    {"name": "mysql-billing-01", "role": "Primary", "engine": "MySQL", "version": "8.0.37",
+     "os": "Red Hat Enterprise Linux 9", "disk_capacity_gb": 1024, "base_load": 0.50},
+    {"name": "mongo-events-02", "role": "Replica", "engine": "MongoDB", "version": "7.0.12",
+     "os": "Ubuntu 22.04 LTS", "disk_capacity_gb": 1024, "base_load": 0.43},
+    {"name": "mongo-events-03", "role": "Replica", "engine": "MongoDB", "version": "7.0.12",
+     "os": "Ubuntu 22.04 LTS", "disk_capacity_gb": 512, "base_load": 0.33},
+    {"name": "redis-cache-02", "role": "Cache", "engine": "Redis", "version": "7.2.5",
+     "os": "Ubuntu 22.04 LTS", "disk_capacity_gb": 256, "base_load": 0.37},
+    {"name": "redis-sessions-01", "role": "Cache", "engine": "Redis", "version": "7.2.5",
+     "os": "Ubuntu 22.04 LTS", "disk_capacity_gb": 128, "base_load": 0.29},
+    {"name": "db-prod-05", "role": "Replica", "engine": "PostgreSQL", "version": "16.3",
+     "os": "Ubuntu 22.04 LTS", "disk_capacity_gb": 1024, "base_load": 0.31},
+    {"name": "mysql-inventory-01", "role": "Primary", "engine": "MySQL", "version": "8.0.37",
+     "os": "Red Hat Enterprise Linux 9", "disk_capacity_gb": 1024, "base_load": 0.53},
+    {"name": "mongo-audit-01", "role": "Replica", "engine": "MongoDB", "version": "7.0.12",
+     "os": "Ubuntu 22.04 LTS", "disk_capacity_gb": 512, "base_load": 0.24},
+    {"name": "redis-queue-01", "role": "Cache", "engine": "Redis", "version": "7.2.5",
+     "os": "Ubuntu 22.04 LTS", "disk_capacity_gb": 128, "base_load": 0.34},
+    {"name": "db-dr-standby-01", "role": "Replica", "engine": "PostgreSQL", "version": "16.3",
+     "os": "Ubuntu 22.04 LTS", "disk_capacity_gb": 2048, "base_load": 0.18},
+    {"name": "mysql-reporting-01", "role": "Replica", "engine": "MySQL", "version": "8.0.37",
+     "os": "Red Hat Enterprise Linux 9", "disk_capacity_gb": 1536, "base_load": 0.39},
+    {"name": "db-prod-06", "role": "Replica", "engine": "PostgreSQL", "version": "16.3",
+     "os": "Ubuntu 22.04 LTS", "disk_capacity_gb": 1024, "base_load": 0.27},
+    {"name": "mongo-config-01", "role": "Replica", "engine": "MongoDB", "version": "7.0.12",
+     "os": "Ubuntu 22.04 LTS", "disk_capacity_gb": 128, "base_load": 0.16},
 ]
 
 ALERT_TEMPLATES = [
@@ -115,8 +149,10 @@ def build_fleet(client: dict) -> list:
     rng = _seeded_rng(f"fleet-{client['code']}")
     octet_a = int(rng.integers(10, 30))
     octet_b = int(rng.integers(0, 60))
+    count = client.get("host_count", len(SERVER_BLUEPRINT))
     fleet = []
-    for i, tmpl in enumerate(SERVER_BLUEPRINT):
+    for i in range(count):
+        tmpl = SERVER_BLUEPRINT[i % len(SERVER_BLUEPRINT)]
         region = client["regions"][i % len(client["regions"])]
         ip_address = f"10.{octet_a}.{octet_b + i}.{int(rng.integers(10, 250))}"
         fleet.append({
