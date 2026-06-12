@@ -169,10 +169,10 @@ def text_cell(style_map):
 
 def info_card(title: str, note: str):
     st.markdown(
-        f"""<div class="info-card">
-            <div class="info-card-head"><span class="info-card-dot"></span>
-            <span class="info-card-title">{title}</span></div>
-            <p class="info-card-desc">{note}</p>
+        f"""<div class="page-hdr">
+            <div class="page-hdr-title">{title}</div>
+            <p class="page-hdr-desc">{note}</p>
+            <hr class="page-hdr-rule" />
         </div>""",
         unsafe_allow_html=True,
     )
@@ -369,6 +369,215 @@ def _fmt_size(n: int) -> str:
     return f"{n/1024**2:.1f} MB"
 
 
+def _channel_msg_display(current_role: str):
+    """Non-fragment display: reads messages from session_state, renders header + bubbles.
+    Only called during full app reruns so images never blink from polling."""
+    sel_id = st.session_state.get("ch_selected", store.CHANNELS[0]["id"])
+    sel_ch = next((c for c in store.CHANNELS if c["id"] == sel_id), store.CHANNELS[0])
+
+    msgs_key = f"ch_msgs_{sel_id}"
+    if msgs_key not in st.session_state:
+        fresh = store.get_channel_messages(sel_id)
+        st.session_state[f"ch_sig_{sel_id}"] = str(
+            [(m.get("ts", ""), bool(m.get("attachment"))) for m in fresh]
+        )
+        st.session_state[f"ch_tick_{sel_id}"] = datetime.now().strftime("%H:%M:%S")
+        st.session_state[msgs_key] = fresh
+    msgs = st.session_state[msgs_key]
+
+    if "ch_last_seen" not in st.session_state:
+        st.session_state.ch_last_seen = {}
+    st.session_state.ch_last_seen[sel_id] = len(msgs)
+
+    ch_icon_svg = _svg(_CH_SVG.get(sel_id, ""), 18, "#22d3ee", "margin-right:7px;")
+    hc1, hc2 = st.columns([5, 1])
+    with hc1:
+        st.markdown(
+            f'<div style="font-size:1.05rem;font-weight:700;color:#e2e8f0;'
+            f'display:flex;align-items:center;">'
+            f'{ch_icon_svg}{sel_ch["name"]}</div>'
+            f'<div style="font-size:0.78rem;color:#64748b;margin-top:2px;">'
+            f'{sel_ch["desc"]}</div>',
+            unsafe_allow_html=True,
+        )
+    with hc2:
+        u_svg = _svg(_SVG_USERS, 12, "#475569", "margin-right:3px;")
+        c_svg = _svg(_SVG_CHAT,  12, "#475569", "margin-right:3px;margin-left:8px;")
+        _tick = st.session_state.get(f"ch_tick_{sel_id}", "—")
+        st.markdown(
+            f'<div style="text-align:right;font-size:0.72rem;color:#475569;padding-top:8px;">'
+            f'{u_svg}{len(ALL_ROLES)}&nbsp;{c_svg}{len(msgs)}'
+            f'&nbsp;<span style="color:#22c55e;font-size:0.65rem;" title="last synced">● {_tick}</span></div>',
+            unsafe_allow_html=True,
+        )
+    st.markdown('<hr style="border-color:#1e293b;margin:6px 0 10px;">', unsafe_allow_html=True)
+
+    bubbles_html = ""
+    if not msgs:
+        empty_icon = _svg(_CH_SVG.get(sel_id, ""), 40, "#1e293b")
+        bubbles_html = (
+            f'<div style="display:flex;flex-direction:column;align-items:center;'
+            f'justify-content:center;height:100%;padding:52px 0;">'
+            f'<div style="margin-bottom:14px;">{empty_icon}</div>'
+            f'<div style="color:#334155;font-size:0.9rem;font-weight:600;">No messages yet</div>'
+            f'<div style="color:#1e293b;font-size:0.78rem;margin-top:4px;">'
+            f'Be the first to post in {sel_ch["name"]}.</div></div>'
+        )
+
+    prev_from, prev_dt = None, None
+    for m in msgs[-100:]:
+        rc       = _ROLE_COLOR.get(m["from"], "#94a3b8")
+        initials = _role_avatar(m["from"])
+
+        ts = m.get("ts", "")
+        now_date     = datetime.now().strftime("%Y-%m-%d")
+        time_str     = ts[11:16] if len(ts) >= 16 else ""
+        date_str     = ts[:10]   if len(ts) >= 10 else ""
+        time_display = time_str  if date_str == now_date else f"{date_str} {time_str}"
+
+        att_html = ""
+        att = m.get("attachment")
+        if att:
+            if att.get("mime", "") in _IMAGE_MIMES:
+                img_label_svg = _svg(_SVG_IMG, 11, "#475569", "margin-right:3px;")
+                att_html = (
+                    f'<div style="margin-top:7px;">'
+                    f'<img src="data:{att["mime"]};base64,{att["data_b64"]}" '
+                    f'style="max-width:260px;max-height:260px;border-radius:8px;'
+                    f'display:block;border:1px solid rgba(255,255,255,0.08);" />'
+                    f'<div style="font-size:0.67rem;color:#475569;margin-top:3px;">'
+                    f'{img_label_svg}{att["name"]} &middot; {_fmt_size(att.get("size", 0))}'
+                    f'</div></div>'
+                )
+            else:
+                file_svg = _svg(_SVG_CLIP, 20, "#64748b")
+                att_html = (
+                    f'<div style="margin-top:7px;background:rgba(255,255,255,0.04);'
+                    f'border:1px solid rgba(255,255,255,0.09);border-radius:8px;'
+                    f'padding:9px 13px;display:inline-flex;align-items:center;gap:10px;">'
+                    f'{file_svg}'
+                    f'<div>'
+                    f'<div style="font-size:0.82rem;color:#e2e8f0;font-weight:600;">{att["name"]}</div>'
+                    f'<div style="font-size:0.69rem;color:#64748b;">{_fmt_size(att.get("size", 0))}</div>'
+                    f'</div></div>'
+                )
+
+        text_html = f'<div class="dc-text">{m["text"]}</div>' if m.get("text") else ""
+
+        cur_dt = None
+        try:
+            cur_dt = datetime.fromisoformat(ts)
+        except (ValueError, TypeError):
+            pass
+
+        is_grouped = (
+            prev_from == m["from"] and prev_dt is not None and cur_dt is not None
+            and (cur_dt - prev_dt).total_seconds() < 420
+        )
+
+        if is_grouped:
+            bubbles_html += (
+                f'<div class="dc-row">'
+                f'<div class="dc-avatar-spacer"><span class="dc-hover-ts">{time_display}</span></div>'
+                f'<div class="dc-body">{text_html}{att_html}</div>'
+                f'</div>'
+            )
+        else:
+            bubbles_html += (
+                f'<div class="dc-row dc-first">'
+                f'<div class="dc-avatar" style="background:{rc}1a;border:2px solid {rc};color:{rc};">{initials}</div>'
+                f'<div class="dc-body">'
+                f'<div class="dc-header"><span class="dc-username" style="color:{rc};">{m["from"]}</span>'
+                f'<span class="dc-time">{time_display}</span></div>'
+                f'{text_html}{att_html}'
+                f'</div></div>'
+            )
+
+        prev_from, prev_dt = m["from"], cur_dt
+
+    st.markdown(
+        f'<div class="dc-feed" style="height:640px;overflow-y:auto;'
+        f'background:linear-gradient(180deg,#06090f 0%,#080d1a 100%);'
+        f'border:1px solid #1e293b;border-radius:10px;">'
+        f'{bubbles_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+@st.fragment(run_every=2)
+def _channel_msg_poller(current_role: str):
+    """Silent polling fragment — detects new messages and triggers a full rerun.
+    Renders nothing visible so images in _channel_msg_display never blink."""
+    sel_id = st.session_state.get("ch_selected", store.CHANNELS[0]["id"])
+    msgs = store.get_channel_messages(sel_id)
+    sig = str([(m.get("ts", ""), bool(m.get("attachment"))) for m in msgs])
+    if st.session_state.get(f"ch_sig_{sel_id}") != sig:
+        st.session_state[f"ch_sig_{sel_id}"] = sig
+        st.session_state[f"ch_msgs_{sel_id}"] = msgs
+        st.session_state[f"ch_tick_{sel_id}"] = datetime.now().strftime("%H:%M:%S")
+        st.rerun()
+    st.markdown('<div style="height:0;overflow:hidden;"></div>', unsafe_allow_html=True)
+
+
+def _channel_compose(current_role: str):
+    """Stable compose form — lives OUTSIDE the polling fragment so it never blinks."""
+    sel_id = st.session_state.get("ch_selected", store.CHANNELS[0]["id"])
+    sel_ch = next((c for c in store.CHANNELS if c["id"] == sel_id), store.CHANNELS[0])
+    with st.container(border=True):
+        with st.form(f"ch_compose_{sel_id}", clear_on_submit=True):
+            msg_text = st.text_area(
+                "message",
+                placeholder=f"Message {sel_ch['name']}…",
+                label_visibility="collapsed",
+                height=68,
+            )
+            attach_file = st.file_uploader(
+                "Attach file or image",
+                type=["png", "jpg", "jpeg", "gif", "webp",
+                      "pdf", "csv", "xlsx", "txt", "log", "json", "zip"],
+                help=f"Images display inline · Max {_MAX_FILE_MB} MB",
+                label_visibility="visible",
+            )
+            fc1, fc2 = st.columns([5, 1])
+            with fc1:
+                if attach_file:
+                    clip_s = _svg(_SVG_CLIP, 12, "#64748b", "margin-right:4px;")
+                    st.markdown(
+                        f'<div style="font-size:0.78rem;color:#64748b;padding-top:4px;">'
+                        f'{clip_s}{attach_file.name} &middot; {_fmt_size(attach_file.size)}</div>',
+                        unsafe_allow_html=True,
+                    )
+            with fc2:
+                submitted = st.form_submit_button(
+                    "Send", icon=":material/send:", type="primary", width="stretch",
+                )
+            if submitted:
+                if not (msg_text and msg_text.strip()) and attach_file is None:
+                    st.warning("Write a message or attach a file.")
+                else:
+                    attachment = None
+                    if attach_file is not None:
+                        if attach_file.size > _MAX_FILE_MB * 1024 * 1024:
+                            st.error(f"File exceeds {_MAX_FILE_MB} MB limit.")
+                        else:
+                            raw = attach_file.read()
+                            attachment = {
+                                "name": attach_file.name,
+                                "mime": attach_file.type or "application/octet-stream",
+                                "data_b64": base64.b64encode(raw).decode(),
+                                "size": attach_file.size,
+                            }
+                    store.post_to_channel(
+                        current_role, sel_id,
+                        (msg_text or "").strip(),
+                        attachment=attachment,
+                    )
+                    # Invalidate cache so _channel_msg_display fetches fresh on next rerun
+                    st.session_state.pop(f"ch_msgs_{sel_id}", None)
+                    st.session_state.pop(f"ch_sig_{sel_id}", None)
+                    st.rerun()
+
+
 def render_channels(current_role: str):
     # ── session init ────────────────────────────────────────────────────
     if "ch_selected" not in st.session_state:
@@ -376,7 +585,7 @@ def render_channels(current_role: str):
     if "ch_last_seen" not in st.session_state:
         st.session_state.ch_last_seen = {}
 
-    col_list, col_msgs = st.columns([1, 3], gap="medium")
+    col_list, col_msgs = st.columns([1, 5], gap="medium")
 
     # ── channel list sidebar ────────────────────────────────────────────
     with col_list:
@@ -385,8 +594,9 @@ def render_channels(current_role: str):
             'letter-spacing:0.1em;color:#475569;margin-bottom:10px;">Team Channels</div>',
             unsafe_allow_html=True,
         )
+        _summaries = store.get_channel_summaries()
         for ch in store.CHANNELS:
-            msgs    = store.get_channel_messages(ch["id"])
+            msgs    = _summaries.get(ch["id"], [])
             unread  = max(0, len(msgs) - st.session_state.ch_last_seen.get(ch["id"], 0))
             active  = st.session_state.ch_selected == ch["id"]
             ic_col  = "#22d3ee" if active else "#475569"
@@ -395,9 +605,9 @@ def render_channels(current_role: str):
             preview_line = ""
             if msgs:
                 lm = msgs[-1]
-                preview_text = lm.get("text") or (lm["attachment"]["name"] if lm.get("attachment") else "")
-                sender = lm["from"].split()[0]
-                trimmed = preview_text[:26] + ("…" if len(preview_text) > 26 else "")
+                sender = lm.get("from_role", lm.get("from", "?")).split()[0]
+                preview_text = (lm.get("text") or "📎 attachment")[:26]
+                trimmed = preview_text + ("…" if len(lm.get("text") or "") > 26 else "")
                 preview_line = f"{sender}: {trimmed}"
 
             badge = (
@@ -420,7 +630,7 @@ def render_channels(current_role: str):
                     label,
                     key=f"ch_btn_{ch['id']}",
                     type="primary" if active else "secondary",
-                    use_container_width=True,
+                    width="stretch",
                     help=ch["desc"],
                 ):
                     st.session_state.ch_selected = ch["id"]
@@ -434,173 +644,11 @@ def render_channels(current_role: str):
                     unsafe_allow_html=True,
                 )
 
-    # ── message panel ───────────────────────────────────────────────────
+    # ── message panel + silent poller ───────────────────────────────────
     with col_msgs:
-        sel_id = st.session_state.ch_selected
-        sel_ch = next((c for c in store.CHANNELS if c["id"] == sel_id), store.CHANNELS[0])
-        msgs   = store.get_channel_messages(sel_id)
-        st.session_state.ch_last_seen[sel_id] = len(msgs)
-
-        ch_icon_svg = _svg(_CH_SVG.get(sel_id, ""), 18, "#22d3ee", "margin-right:7px;")
-
-        # header
-        hc1, hc2 = st.columns([5, 1])
-        with hc1:
-            st.markdown(
-                f'<div style="font-size:1.05rem;font-weight:700;color:#e2e8f0;'
-                f'display:flex;align-items:center;">'
-                f'{ch_icon_svg}{sel_ch["name"]}</div>'
-                f'<div style="font-size:0.78rem;color:#64748b;margin-top:2px;">'
-                f'{sel_ch["desc"]}</div>',
-                unsafe_allow_html=True,
-            )
-        with hc2:
-            u_svg = _svg(_SVG_USERS, 12, "#475569", "margin-right:3px;")
-            c_svg = _svg(_SVG_CHAT,  12, "#475569", "margin-right:3px;margin-left:8px;")
-            st.markdown(
-                f'<div style="text-align:right;font-size:0.72rem;color:#475569;padding-top:8px;">'
-                f'{u_svg}{len(ALL_ROLES)}&nbsp;{c_svg}{len(msgs)}</div>',
-                unsafe_allow_html=True,
-            )
-        st.markdown('<hr style="border-color:#1e293b;margin:6px 0 10px;">', unsafe_allow_html=True)
-
-        # ── message bubbles ───────────────────────────────────────────
-        bubbles_html = ""
-        if not msgs:
-            empty_icon = _svg(_CH_SVG.get(sel_id, ""), 40, "#1e293b")
-            bubbles_html = (
-                f'<div style="display:flex;flex-direction:column;align-items:center;'
-                f'justify-content:center;height:100%;padding:52px 0;">'
-                f'<div style="margin-bottom:14px;">{empty_icon}</div>'
-                f'<div style="color:#334155;font-size:0.9rem;font-weight:600;">No messages yet</div>'
-                f'<div style="color:#1e293b;font-size:0.78rem;margin-top:4px;">'
-                f'Be the first to post in {sel_ch["name"]}.</div></div>'
-            )
-
-        for m in msgs[-100:]:
-            is_mine  = m["from"] == current_role
-            rc       = _ROLE_COLOR.get(m["from"], "#94a3b8")
-            initials = _role_avatar(m["from"])
-            flex_dir = "row-reverse" if is_mine else "row"
-            align    = "flex-end"    if is_mine else "flex-start"
-            br       = "12px 4px 12px 12px" if is_mine else "4px 12px 12px 12px"
-            bg       = "rgba(34,211,238,0.07)" if is_mine else "rgba(15,23,42,0.9)"
-            bd       = "1px solid rgba(34,211,238,0.18)" if is_mine else "1px solid #1e293b"
-
-            ts = m.get("ts", "")
-            now_date     = datetime.now().strftime("%Y-%m-%d")
-            time_str     = ts[11:16] if len(ts) >= 16 else ""
-            date_str     = ts[:10]   if len(ts) >= 10 else ""
-            time_display = time_str  if date_str == now_date else f"{date_str} {time_str}"
-
-            att_html = ""
-            att = m.get("attachment")
-            if att:
-                if att.get("mime", "") in _IMAGE_MIMES:
-                    img_label_svg = _svg(_SVG_IMG, 11, "#475569", "margin-right:3px;")
-                    att_html = (
-                        f'<div style="margin-top:7px;">'
-                        f'<img src="data:{att["mime"]};base64,{att["data_b64"]}" '
-                        f'style="max-width:260px;max-height:260px;border-radius:8px;'
-                        f'display:block;border:1px solid rgba(255,255,255,0.08);" />'
-                        f'<div style="font-size:0.67rem;color:#475569;margin-top:3px;">'
-                        f'{img_label_svg}{att["name"]} &middot; {_fmt_size(att.get("size", 0))}'
-                        f'</div></div>'
-                    )
-                else:
-                    file_svg = _svg(_SVG_CLIP, 20, "#64748b")
-                    att_html = (
-                        f'<div style="margin-top:7px;background:rgba(255,255,255,0.04);'
-                        f'border:1px solid rgba(255,255,255,0.09);border-radius:8px;'
-                        f'padding:9px 13px;display:inline-flex;align-items:center;gap:10px;">'
-                        f'{file_svg}'
-                        f'<div>'
-                        f'<div style="font-size:0.82rem;color:#e2e8f0;font-weight:600;">{att["name"]}</div>'
-                        f'<div style="font-size:0.69rem;color:#64748b;">{_fmt_size(att.get("size", 0))}</div>'
-                        f'</div></div>'
-                    )
-
-            text_html = (
-                f'<div style="color:#cbd5e1;font-size:0.85rem;line-height:1.55;word-break:break-word;">'
-                f'{m["text"]}</div>'
-            ) if m.get("text") else ""
-
-            ta = "right" if is_mine else "left"
-            bubbles_html += (
-                f'<div style="display:flex;flex-direction:{flex_dir};align-items:flex-start;'
-                f'gap:8px;margin-bottom:12px;align-self:{align};max-width:84%;">'
-                f'<div style="flex-shrink:0;width:34px;height:34px;border-radius:50%;'
-                f'background:{rc}1a;border:2px solid {rc};display:flex;align-items:center;'
-                f'justify-content:center;font-size:0.6rem;font-weight:800;color:{rc};">{initials}</div>'
-                f'<div style="flex:1;min-width:0;">'
-                f'<div style="font-size:0.7rem;font-weight:700;color:{rc};'
-                f'margin-bottom:3px;text-align:{ta};">'
-                f'{m["from"]} <span style="color:#475569;font-weight:400;font-size:0.67rem;">'
-                f'{time_display}</span></div>'
-                f'<div style="background:{bg};border:{bd};border-radius:{br};padding:9px 13px;">'
-                f'{text_html}{att_html}</div>'
-                f'</div></div>'
-            )
-
-        st.markdown(
-            f'<div style="height:430px;overflow-y:auto;display:flex;flex-direction:column;'
-            f'padding:16px;background:linear-gradient(180deg,#06090f 0%,#080d1a 100%);'
-            f'border:1px solid #1e293b;border-radius:10px;margin-bottom:12px;">'
-            f'{bubbles_html}</div>',
-            unsafe_allow_html=True,
-        )
-
-        # ── compose ───────────────────────────────────────────────────
-        with st.container(border=True):
-            with st.form(f"ch_compose_{sel_id}", clear_on_submit=True):
-                msg_text = st.text_area(
-                    "message",
-                    placeholder=f"Message {sel_ch['name']}…",
-                    label_visibility="collapsed",
-                    height=68,
-                )
-                attach_file = st.file_uploader(
-                    "Attach file or image",
-                    type=["png", "jpg", "jpeg", "gif", "webp",
-                          "pdf", "csv", "xlsx", "txt", "log", "json", "zip"],
-                    help=f"Images display inline · Max {_MAX_FILE_MB} MB",
-                    label_visibility="visible",
-                )
-                fc1, fc2 = st.columns([5, 1])
-                with fc1:
-                    if attach_file:
-                        clip_s = _svg(_SVG_CLIP, 12, "#64748b", "margin-right:4px;")
-                        st.markdown(
-                            f'<div style="font-size:0.78rem;color:#64748b;padding-top:4px;">'
-                            f'{clip_s}{attach_file.name} &middot; {_fmt_size(attach_file.size)}</div>',
-                            unsafe_allow_html=True,
-                        )
-                with fc2:
-                    submitted = st.form_submit_button(
-                        "Send", icon=":material/send:", type="primary", use_container_width=True,
-                    )
-                if submitted:
-                    if not (msg_text and msg_text.strip()) and attach_file is None:
-                        st.warning("Write a message or attach a file.")
-                    else:
-                        attachment = None
-                        if attach_file is not None:
-                            if attach_file.size > _MAX_FILE_MB * 1024 * 1024:
-                                st.error(f"File exceeds {_MAX_FILE_MB} MB limit.")
-                            else:
-                                raw = attach_file.read()
-                                attachment = {
-                                    "name": attach_file.name,
-                                    "mime": attach_file.type or "application/octet-stream",
-                                    "data_b64": base64.b64encode(raw).decode(),
-                                    "size": attach_file.size,
-                                }
-                        store.post_to_channel(
-                            current_role, sel_id,
-                            (msg_text or "").strip(),
-                            attachment=attachment,
-                        )
-                        st.rerun()
+        _channel_msg_display(current_role)
+        _channel_msg_poller(current_role)
+        _channel_compose(current_role)
 
 
 def render_email_composer(current_role: str, client=None, snapshots=None, alerts=None):
@@ -1071,7 +1119,7 @@ def _alerts_panel(alerts: pd.DataFrame, server_names: list, show_drilldown: bool
                      })
         st.caption(f"Showing {len(shown)} of {len(alerts)} alerts.")
 
-        if show_drilldown and "Server detail" in [t for t in ["Server detail"]]:
+        if show_drilldown:
             jc1, jc2 = st.columns([3, 1], vertical_alignment="bottom")
             jump_target = jc1.selectbox("Drill into a host", sorted(shown["server"].unique()), key=f"jt_{id(alerts)}")
             with jc2:
@@ -1301,10 +1349,14 @@ def view_data_ops(client, snapshots, alerts, backups, maintenance,
                 m_dur    = mc4.number_input("Duration (hours)", min_value=1, max_value=12, value=2)
                 if st.form_submit_button("Add to calendar", icon=":material/event:", type="primary"):
                     if m_desc.strip():
-                        store.create_ticket(
-                            title=f"Maintenance: {m_desc.strip()} on {m_server}",
-                            description=f"Scheduled for {m_date}, duration {m_dur}h",
-                            priority="Low", created_by="Data Operation Specialist",
+                        start_dt = m_date.strftime("%Y-%m-%d") + " 02:00"
+                        end_dt   = m_date.strftime("%Y-%m-%d") + f" {(2 + int(m_dur)):02d}:00"
+                        store.create_maint_window(
+                            f"Maintenance: {m_desc.strip()} on {m_server}",
+                            f"Scheduled for {m_date}, duration {m_dur}h",
+                            start_dt, end_dt,
+                            [m_server], "Data Operation Specialist", "Standard",
+                            "Data Operation Specialist",
                         )
                         st.toast(f"Maintenance window added for {m_server}", icon=":material/event:")
 
@@ -1844,12 +1896,13 @@ def view_server_maint(*, client, snapshots, servers, seed, role, **_):
         DB_VERSIONS = {"PostgreSQL": ("15.4", "16.2"), "MySQL": ("8.0.33", "8.0.37"), "MongoDB": ("6.0.8", "7.0.4"), "Redis": ("7.0.12", "7.2.3"), "MariaDB": ("10.11.4", "11.2.2")}
         patch_rows = []
         for s in snapshots:
-            db = s.get("db_type", "PostgreSQL")
+            db = s.get("engine", "PostgreSQL")
             cur_ver, latest_ver = DB_VERSIONS.get(db, ("—", "—"))
-            up_to_date = rng.random() > 0.35
+            _prng = random.Random(abs(hash(f"{s['name']}-{seed}")) % 2 ** 32)
+            up_to_date = _prng.random() > 0.35
             patch_rows.append({
                 "Server": s["name"], "DB Type": db, "Region": s.get("region", "—"),
-                "Current Version": cur_ver if up_to_date else cur_ver.rsplit(".", 1)[0] + f".{rng.randint(0, int(cur_ver.rsplit('.', 1)[-1]) - 1)}",
+                "Current Version": cur_ver if up_to_date else cur_ver.rsplit(".", 1)[0] + f".{_prng.randint(0, max(0, int(cur_ver.rsplit('.', 1)[-1]) - 1))}",
                 "Latest Version": latest_ver,
                 "Patch Status": "Up to date" if up_to_date else "Patch available",
                 "Last Checked": (datetime.now() - timedelta(hours=rng.randint(1, 48))).strftime("%Y-%m-%d %H:%M"),
@@ -1857,7 +1910,7 @@ def view_server_maint(*, client, snapshots, servers, seed, role, **_):
         patch_df = pd.DataFrame(patch_rows)
         st.dataframe(
             patch_df.style.map(lambda v: "color:#22c55e;font-weight:600;" if v == "Up to date" else ("color:#f59e0b;font-weight:600;" if v == "Patch available" else ""), subset=["Patch Status"]),
-            use_container_width=True, hide_index=True,
+            width="stretch", hide_index=True,
         )
         needs_patch = sum(1 for r in patch_rows if r["Patch Status"] == "Patch available")
         c1, c2, c3 = st.columns(3)
@@ -1898,7 +1951,7 @@ def view_server_maint(*, client, snapshots, servers, seed, role, **_):
                 "Start": w.get("start", "—"), "End": w.get("end", "—"),
                 "Status": w.get("status", "—"), "Servers": ", ".join(w.get("affected_servers", [])),
             } for w in closed])
-            st.dataframe(log_df, use_container_width=True, hide_index=True)
+            st.dataframe(log_df, width="stretch", hide_index=True)
 
 
 def view_asset_mgmt(*, client, snapshots, servers, seed, role, **_):
@@ -1914,19 +1967,19 @@ def view_asset_mgmt(*, client, snapshots, servers, seed, role, **_):
         for s in snapshots:
             status_emoji = {"Healthy": "🟢", "Warning": "🟡", "Critical": "🔴"}.get(s.get("status", ""), "⚪")
             fleet_rows.append({
-                "Server": s["name"], "DB Type": s.get("db_type", "—"), "Role": s.get("role", "—"),
+                "Server": s["name"], "DB Type": s.get("engine", "—"), "Role": s.get("role", "—"),
                 "Region": s.get("region", "—"),
                 "Status": s.get("status", "—"),
                 "CPU %": f"{s.get('cpu_pct', 0):.1f}",
-                "Mem %": f"{s.get('mem_pct', 0):.1f}",
+                "Mem %": f"{s.get('memory_pct', 0):.1f}",
                 "Disk %": f"{s.get('disk_pct', 0):.1f}",
-                "Connections": s.get("active_connections", 0),
+                "Connections": s.get("connections", 0),
                 "Uptime 30d %": f"{s.get('uptime_pct_30d', 0):.2f}",
             })
         fleet_df = pd.DataFrame(fleet_rows)
         st.dataframe(
             fleet_df.style.map(badge_cell(STATUS_STYLE), subset=["Status"]),
-            use_container_width=True, hide_index=True,
+            width="stretch", hide_index=True,
         )
         ca, cb, cc, cd = st.columns(4)
         ca.metric("Total Assets", len(fleet_rows))
@@ -1939,7 +1992,7 @@ def view_asset_mgmt(*, client, snapshots, servers, seed, role, **_):
         datacenters = ["us-east-1a", "us-west-2b", "eu-west-1a", "ap-southeast-1b", "ca-central-1a"]
         for s in snapshots:
             hw_rows.append({
-                "Server": s["name"], "DB Type": s.get("db_type", "—"),
+                "Server": s["name"], "DB Type": s.get("engine", "—"),
                 "CPU Cores": rng.choice([8, 16, 32, 64]),
                 "RAM (GB)": rng.choice([32, 64, 128, 256]),
                 "Disk (TB)": round(rng.uniform(1.0, 20.0), 1),
@@ -1947,7 +2000,7 @@ def view_asset_mgmt(*, client, snapshots, servers, seed, role, **_):
                 "Datacenter": rng.choice(datacenters),
                 "Hypervisor": rng.choice(["VMware ESXi 8", "KVM", "AWS Nitro", "Bare Metal"]),
             })
-        st.dataframe(pd.DataFrame(hw_rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(hw_rows), width="stretch", hide_index=True)
 
     with tabs[2]:
         vendors = ["HashiCorp", "Oracle", "Red Hat", "Elastic", "DataStax", "Percona", "VMware", "Veeam", "PagerDuty", "Datadog"]
@@ -1967,7 +2020,7 @@ def view_asset_mgmt(*, client, snapshots, servers, seed, role, **_):
         lic_df = pd.DataFrame(lic_rows)
         st.dataframe(
             lic_df.style.map(lambda v: "color:#ef4444;font-weight:600;" if v == "Expired" else ("color:#f59e0b;font-weight:600;" if v == "Expiring Soon" else "color:#22c55e;font-weight:600;" if v == "Active" else ""), subset=["Status"]),
-            use_container_width=True, hide_index=True,
+            width="stretch", hide_index=True,
         )
 
     with tabs[3]:
@@ -1979,7 +2032,7 @@ def view_asset_mgmt(*, client, snapshots, servers, seed, role, **_):
             replacement = eol_date - timedelta(days=rng.randint(180, 365))
             days_to_eol = (eol_date - datetime.now()).days
             lc_rows.append({
-                "Server": s["name"], "DB Type": s.get("db_type", "—"),
+                "Server": s["name"], "DB Type": s.get("engine", "—"),
                 "Purchase Date": purchase_date.strftime("%Y-%m-%d"),
                 "Warranty Expiry": warranty_exp.strftime("%Y-%m-%d"),
                 "EOL Date": eol_date.strftime("%Y-%m-%d"),
@@ -1990,7 +2043,7 @@ def view_asset_mgmt(*, client, snapshots, servers, seed, role, **_):
         lc_df = pd.DataFrame(lc_rows)
         st.dataframe(
             lc_df.style.map(lambda v: "color:#ef4444;font-weight:600;" if v == "Critical" else ("color:#f59e0b;font-weight:600;" if v == "Warning" else "color:#22c55e;" if v == "Good" else ""), subset=["Health"]),
-            use_container_width=True, hide_index=True,
+            width="stretch", hide_index=True,
         )
         st.caption("Servers with Days to EOL < 180 are highlighted Critical; < 365 are Warning.")
 
@@ -2043,20 +2096,48 @@ def view_website_dev(*, client, role, seed, **_):
         if not projects:
             st.markdown('<div style="padding:28px;text-align:center;color:#475569;">Create a project first to see tasks.</div>', unsafe_allow_html=True)
         else:
-            task_names = ["Design wireframes", "Set up repo", "Build API endpoints", "Frontend components", "Write unit tests", "Configure CI/CD", "Deploy to staging", "QA review", "Client feedback round", "Production deploy"]
+            proj_names = [p.get("name", p["id"]) for p in projects]
+            sel_proj_name = st.selectbox("Project", proj_names, key="task_proj_sel")
+            sel_proj = next(p for p in projects if p.get("name", p["id"]) == sel_proj_name)
+            tasks = sel_proj.get("tasks", [])
+
+            with st.form(f"add_task_{sel_proj['id']}", clear_on_submit=True):
+                tc1, tc2 = st.columns([5, 1])
+                with tc1:
+                    new_task_name = st.text_input("New task", placeholder="e.g. Set up CI/CD pipeline", label_visibility="collapsed")
+                with tc2:
+                    add_task_submitted = st.form_submit_button("Add task", width="stretch", type="primary")
+            if add_task_submitted and new_task_name.strip():
+                store.add_project_task(sel_proj["id"], new_task_name.strip())
+                st.rerun()
+
             todo_col, prog_col, done_col = st.columns(3)
-            with todo_col:
-                st.markdown('<div style="font-size:0.78rem;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">TODO</div>', unsafe_allow_html=True)
-                for t in rng.sample(task_names, k=min(4, len(task_names))):
-                    st.markdown(f'<div style="background:rgba(15,23,42,0.8);border:1px solid #1e293b;border-radius:8px;padding:10px 12px;margin-bottom:6px;color:#cbd5e1;font-size:0.82rem;">⬜ {t}</div>', unsafe_allow_html=True)
-            with prog_col:
-                st.markdown('<div style="font-size:0.78rem;font-weight:700;color:#22d3ee;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">IN PROGRESS</div>', unsafe_allow_html=True)
-                for t in rng.sample(task_names, k=min(3, len(task_names))):
-                    st.markdown(f'<div style="background:rgba(34,211,238,0.05);border:1px solid rgba(34,211,238,0.18);border-radius:8px;padding:10px 12px;margin-bottom:6px;color:#e2e8f0;font-size:0.82rem;">🔄 {t}</div>', unsafe_allow_html=True)
-            with done_col:
-                st.markdown('<div style="font-size:0.78rem;font-weight:700;color:#22c55e;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">DONE</div>', unsafe_allow_html=True)
-                for t in rng.sample(task_names, k=min(3, len(task_names))):
-                    st.markdown(f'<div style="background:rgba(34,197,94,0.05);border:1px solid rgba(34,197,94,0.18);border-radius:8px;padding:10px 12px;margin-bottom:6px;color:#e2e8f0;font-size:0.82rem;">✅ {t}</div>', unsafe_allow_html=True)
+            col_labels = {
+                "todo":        ('<div style="font-size:0.78rem;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">TODO</div>', "#f59e0b", "⬜", "rgba(15,23,42,0.8)", "#1e293b"),
+                "in-progress": ('<div style="font-size:0.78rem;font-weight:700;color:#22d3ee;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">IN PROGRESS</div>', "#22d3ee", "🔄", "rgba(34,211,238,0.05)", "rgba(34,211,238,0.18)"),
+                "done":        ('<div style="font-size:0.78rem;font-weight:700;color:#22c55e;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">DONE</div>', "#22c55e", "✅", "rgba(34,197,94,0.05)", "rgba(34,197,94,0.18)"),
+            }
+            _STATUS_NEXT = {"todo": "in-progress", "in-progress": "done", "done": "todo"}
+            _STATUS_NEXT_LABEL = {"todo": "→ Start", "in-progress": "→ Done", "done": "↺ Reset"}
+
+            for col_widget, status_key in zip([todo_col, prog_col, done_col], ["todo", "in-progress", "done"]):
+                header_html, _, icon, bg, bd = col_labels[status_key]
+                with col_widget:
+                    st.markdown(header_html, unsafe_allow_html=True)
+                    col_tasks = [(i, t) for i, t in enumerate(tasks) if t.get("status") == status_key]
+                    if not col_tasks:
+                        st.markdown(f'<div style="color:#334155;font-size:0.78rem;padding:10px 0;">No tasks</div>', unsafe_allow_html=True)
+                    for i, t in col_tasks:
+                        st.markdown(
+                            f'<div style="background:{bg};border:1px solid {bd};border-radius:8px;'
+                            f'padding:9px 12px;margin-bottom:4px;color:#cbd5e1;font-size:0.82rem;">'
+                            f'{icon} {t["name"]}</div>',
+                            unsafe_allow_html=True,
+                        )
+                        next_status = _STATUS_NEXT[status_key]
+                        if st.button(_STATUS_NEXT_LABEL[status_key], key=f"task_mv_{sel_proj['id']}_{i}", width="stretch"):
+                            store.update_task_status(sel_proj["id"], i, next_status)
+                            st.rerun()
 
     with tabs[2]:
         TECH_STACK = [
@@ -2075,7 +2156,7 @@ def view_website_dev(*, client, role, seed, **_):
             {"Category": "Cloud", "Technology": "Cloudflare CDN", "Version": "—", "Notes": "Edge & DNS"},
             {"Category": "Cloud", "Technology": "Vercel", "Version": "—", "Notes": "Frontend hosting"},
         ]
-        st.dataframe(pd.DataFrame(TECH_STACK), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(TECH_STACK), width="stretch", hide_index=True)
 
     with tabs[3]:
         common_tech = ["React", "Next.js", "Vue.js", "Angular", "Tailwind CSS", "Node.js", "FastAPI", "Django", "Laravel", "PostgreSQL", "MySQL", "MongoDB", "Redis", "Docker", "AWS", "Vercel", "Cloudflare", "GitHub Actions"]
@@ -2133,7 +2214,7 @@ def view_bug_perf(*, client, role, seed, snapshots, **_):
             } for b in bugs])
             st.dataframe(
                 bug_df.style.map(badge_cell(PRIORITY_STYLE), subset=["Priority"]).map(badge_cell(TICKET_STATUS_STYLE), subset=["Status"]),
-                use_container_width=True, hide_index=True,
+                width="stretch", hide_index=True,
             )
             st.markdown("#### Update Bug Status")
             for b in [x for x in bugs if x.get("status") != "Resolved"][:5]:
@@ -2287,7 +2368,7 @@ def view_uiux_infra(*, client, role, **_):
                 "Status": s.get("status", "—"), "Submitted By": s.get("submitted_by", "—"),
                 "Created": s.get("created_at", "—")[:10] if s.get("created_at") else "—",
             } for s in closed])
-            st.dataframe(closed_df, use_container_width=True, hide_index=True)
+            st.dataframe(closed_df, width="stretch", hide_index=True)
 
 
 def view_client_support_module(*, client, snapshots, alerts, role, **_):
@@ -2312,7 +2393,7 @@ def view_client_support_module(*, client, snapshots, alerts, role, **_):
                     st.markdown(f"**Priority:** {t.get('priority', '—')}")
                     st.markdown(f"**Assigned to:** {t.get('assigned_to', '—')}")
                 with c2:
-                    st.markdown(f"**Client:** {t.get('client', '—')}")
+                    st.markdown(f"**Assigned to:** {t.get('assigned_to', '—')}")
                     st.markdown(f"**Created:** {str(t.get('created_at', '—'))[:16]}")
                     st.markdown(f"**Updated:** {str(t.get('updated_at', '—'))[:16]}")
                 st.markdown(f"**Description:** {t.get('description', '—')}")
@@ -2496,7 +2577,7 @@ def view_ops_reporting(*, client, snapshots, alerts, backups, seed, role, **_):
         "KPI dashboards, pre-built fleet reports, trend analysis and export centre for all operational data.",
     )
     rng = random.Random(abs(hash(seed)) % 2 ** 32)
-    tabs = st.tabs(["KPI Dashboard", "Fleet Reports", "Trend Analysis", "Export Center"])
+    tabs = st.tabs(["KPI Dashboard", "Fleet Reports", "Trend Analysis", "Export Center", "Backup History"])
 
     now = datetime.now()
     _snaps = [s for s in snapshots if isinstance(s, dict)]
@@ -2517,16 +2598,16 @@ def view_ops_reporting(*, client, snapshots, alerts, backups, seed, role, **_):
         with mini1:
             st.markdown("**Top 3 by Latency**")
             top_lat = sorted(_snaps, key=lambda s: s.get("query_latency_ms", 0), reverse=True)[:3]
-            st.dataframe(pd.DataFrame([{"Server": s["name"], "Latency (ms)": f"{s.get('query_latency_ms', 0):.1f}"} for s in top_lat]), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame([{"Server": s["name"], "Latency (ms)": f"{s.get('query_latency_ms', 0):.1f}"} for s in top_lat]), width="stretch", hide_index=True)
         with mini2:
             st.markdown("**Top 3 by Disk Usage**")
             top_disk = sorted(_snaps, key=lambda s: s.get("disk_pct", 0), reverse=True)[:3]
-            st.dataframe(pd.DataFrame([{"Server": s["name"], "Disk %": f"{s.get('disk_pct', 0):.1f}"} for s in top_disk]), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame([{"Server": s["name"], "Disk %": f"{s.get('disk_pct', 0):.1f}"} for s in top_disk]), width="stretch", hide_index=True)
         with mini3:
             st.markdown("**Recent 3 Alerts**")
             if hasattr(alerts, "columns") and not alerts.empty:
                 recent_alerts = alerts.sort_values("opened", ascending=False).head(3)[["server", "severity", "status"]].rename(columns={"server": "Server", "severity": "Severity", "status": "Status"})
-                st.dataframe(recent_alerts, use_container_width=True, hide_index=True)
+                st.dataframe(recent_alerts, width="stretch", hide_index=True)
             else:
                 st.caption("No alerts.")
 
@@ -2547,13 +2628,13 @@ def view_ops_reporting(*, client, snapshots, alerts, backups, seed, role, **_):
                     st.caption(f"Last generated: {last_gen}")
                 with rc2:
                     if title == "Fleet Health Summary":
-                        csv_data = pd.DataFrame([{k: s.get(k, "—") for k in ["name", "db_type", "role", "region", "status", "cpu_pct", "mem_pct", "disk_pct", "uptime_pct_30d"]} for s in _snaps]).to_csv(index=False)
+                        csv_data = pd.DataFrame([{k: s.get(k, "—") for k in ["name", "engine", "role", "region", "status", "cpu_pct", "memory_pct", "disk_pct", "uptime_pct_30d"]} for s in _snaps]).to_csv(index=False)
                     elif title == "Backup Coverage Report":
                         csv_data = (backups.to_csv(index=False) if (hasattr(backups, "to_csv") and not backups.empty) else "server,status,timestamp\n")
                     elif title == "Alert Activity Report":
                         csv_data = (alerts.to_csv(index=False) if (hasattr(alerts, "to_csv") and not alerts.empty) else "server,severity,status\n")
                     else:
-                        csv_data = pd.DataFrame([{"Server": s["name"], "CPU %": s.get("cpu_pct"), "Mem %": s.get("mem_pct"), "Disk %": s.get("disk_pct")} for s in _snaps]).to_csv(index=False)
+                        csv_data = pd.DataFrame([{"Server": s["name"], "CPU %": s.get("cpu_pct"), "Mem %": s.get("memory_pct"), "Disk %": s.get("disk_pct")} for s in _snaps]).to_csv(index=False)
                     st.download_button("Download CSV", data=csv_data, file_name=f"{title.lower().replace(' ', '_')}.csv", mime="text/csv", key=f"rpt_{title[:8]}")
                 st.markdown('<hr style="border-color:#1e293b;margin:8px 0;">', unsafe_allow_html=True)
 
@@ -2578,25 +2659,269 @@ def view_ops_reporting(*, client, snapshots, alerts, backups, seed, role, **_):
         st.caption("Download raw CSV exports for use in external reporting tools.")
         e1, e2, e3 = st.columns(3)
         with e1:
-            fleet_csv = pd.DataFrame([{k: s.get(k, "—") for k in ["name", "db_type", "role", "region", "status", "cpu_pct", "memory_pct", "disk_pct", "query_latency_ms", "connections", "replication_lag_s", "uptime_pct_30d"]} for s in _snaps]).to_csv(index=False)
-            st.download_button("Full Fleet Export CSV", data=fleet_csv, file_name="fleet_export.csv", mime="text/csv", use_container_width=True)
+            fleet_csv = pd.DataFrame([{k: s.get(k, "—") for k in ["name", "engine", "role", "region", "status", "cpu_pct", "memory_pct", "disk_pct", "query_latency_ms", "connections", "replication_lag_s", "uptime_pct_30d"]} for s in _snaps]).to_csv(index=False)
+            st.download_button("Full Fleet Export CSV", data=fleet_csv, file_name="fleet_export.csv", mime="text/csv", width="stretch")
             st.caption(f"{len(snapshots)} servers")
         with e2:
             alerts_csv = (alerts.to_csv(index=False) if (hasattr(alerts, "to_csv") and not alerts.empty) else "no data\n")
-            st.download_button("Alerts Export CSV", data=alerts_csv, file_name="alerts_export.csv", mime="text/csv", use_container_width=True)
+            st.download_button("Alerts Export CSV", data=alerts_csv, file_name="alerts_export.csv", mime="text/csv", width="stretch")
             st.caption(f"{len(alerts)} alerts")
         with e3:
             backups_csv = (backups.to_csv(index=False) if (hasattr(backups, "to_csv") and not backups.empty) else "no data\n")
-            st.download_button("Backup Log CSV", data=backups_csv, file_name="backup_log.csv", mime="text/csv", use_container_width=True)
+            st.download_button("Backup Log CSV", data=backups_csv, file_name="backup_log.csv", mime="text/csv", width="stretch")
             st.caption(f"{len(backups)} backup records")
+
+    with tabs[4]:
+        _bk_records = store.get().get("backup_records", [])
+        # Fall back to telemetry-generated backup log when no persisted records exist
+        if _bk_records:
+            bk_df = pd.DataFrame([{
+                "ID": b.get("id", "—"),
+                "Timestamp": str(b.get("timestamp", "—"))[:16],
+                "Server": b.get("server", "—"),
+                "Type": b.get("type", "—"),
+                "Result": b.get("result", "—"),
+                "Duration (min)": b.get("duration_min", "—"),
+                "Size (GB)": b.get("size_gb", "—"),
+                "Verified By": b.get("verified_by", "—"),
+            } for b in _bk_records])
+            total_bk   = len(_bk_records)
+            success_bk = sum(1 for b in _bk_records if b.get("result") == "Success")
+        elif hasattr(backups, "columns") and not backups.empty:
+            bk_df = pd.DataFrame({
+                "Timestamp":     backups["timestamp"].apply(fmt_dt),
+                "Server":        backups["server"],
+                "Type":          backups["type"],
+                "Result":        backups["result"],
+                "Duration (min)": backups["duration_min"],
+                "Size (GB)":     backups["size_gb"],
+            })
+            total_bk   = len(backups)
+            success_bk = int((backups["result"] == "Success").sum())
+        else:
+            bk_df = None
+            total_bk = success_bk = 0
+
+        if bk_df is None:
+            st.info("No backup history records on file.")
+        else:
+            fail_bk  = total_bk - success_bk
+            rate_bk  = round(success_bk / total_bk * 100, 1) if total_bk else 0.0
+            bk1, bk2, bk3, bk4 = st.columns(4)
+            bk1.metric("Total Records", total_bk)
+            bk2.metric("Successful", success_bk)
+            bk3.metric("Failed", fail_bk, delta_color="inverse")
+            bk4.metric("Success Rate", f"{rate_bk}%")
+            st.markdown("---")
+            st.dataframe(
+                bk_df.style.map(
+                    lambda v: "color:#22c55e;font-weight:600;" if v == "Success" else ("color:#ef4444;font-weight:600;" if v == "Failed" else ""),
+                    subset=["Result"],
+                ),
+                width="stretch", hide_index=True,
+            )
+            st.download_button("Export Backup History CSV", data=bk_df.to_csv(index=False), file_name="backup_history.csv", mime="text/csv")
+
+
+def _dm_msg_display(current_role: str):
+    """Non-fragment display: renders DM header + bubbles from session state.
+    Only re-renders on full app reruns so content never blinks from polling."""
+    sel = st.session_state.get("dm_selected")
+    if not sel:
+        st.markdown(
+            '<div style="display:flex;align-items:center;justify-content:center;'
+            'height:420px;color:#334155;font-size:0.88rem;">'
+            'Select a conversation on the left or start a new one.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    msgs_key = f"dm_msgs_{current_role}_{sel}"
+    if msgs_key not in st.session_state:
+        fresh = store.get_thread(current_role, sel)
+        st.session_state[f"dm_sig_{current_role}_{sel}"] = str(
+            [(m.get("ts", ""), m.get("text", "")) for m in fresh]
+        )
+        st.session_state[f"dm_tick_{current_role}_{sel}"] = datetime.now().strftime("%H:%M:%S")
+        st.session_state[msgs_key] = fresh
+    msgs = st.session_state[msgs_key]
+
+    rc = _ROLE_COLOR.get(sel, "#94a3b8")
+    hc1, hc2 = st.columns([5, 1])
+    with hc1:
+        st.markdown(
+            f'<div style="font-size:1.05rem;font-weight:700;color:#e2e8f0;">'
+            f'<span style="color:{rc};">●</span>&nbsp;{sel}</div>'
+            f'<div style="font-size:0.78rem;color:#64748b;margin-top:2px;">'
+            f'{len(msgs)} message{"s" if len(msgs) != 1 else ""}</div>',
+            unsafe_allow_html=True,
+        )
+    with hc2:
+        _tick = st.session_state.get(f"dm_tick_{current_role}_{sel}", "—")
+        st.markdown(
+            f'<div style="text-align:right;font-size:0.72rem;color:#475569;padding-top:8px;">'
+            f'{_svg(_SVG_CHAT, 13, "#475569")}'
+            f'&nbsp;<span style="color:#22c55e;font-size:0.65rem;" title="last synced">● {_tick}</span></div>',
+            unsafe_allow_html=True,
+        )
+    st.markdown('<hr style="border-color:#1e293b;margin:6px 0 10px;">', unsafe_allow_html=True)
+
+    bubbles_html = ""
+    if not msgs:
+        bubbles_html = (
+            '<div style="display:flex;align-items:center;justify-content:center;'
+            'height:220px;color:#334155;font-size:0.87rem;">'
+            'No messages yet — say hello below.</div>'
+        )
+    for m in msgs[-60:]:
+        is_mine  = m["from"] == current_role
+        mrc      = _ROLE_COLOR.get(m["from"], "#94a3b8")
+        initials = _role_avatar(m["from"])
+        flex_dir = "row-reverse" if is_mine else "row"
+        align    = "flex-end"    if is_mine else "flex-start"
+        br       = "12px 4px 12px 12px" if is_mine else "4px 12px 12px 12px"
+        bg       = "rgba(34,211,238,0.07)" if is_mine else "rgba(15,23,42,0.9)"
+        bd       = "1px solid rgba(34,211,238,0.18)" if is_mine else "1px solid #1e293b"
+        ts       = m.get("ts", "")
+        now_date = datetime.now().strftime("%Y-%m-%d")
+        time_str = ts[11:16] if len(ts) >= 16 else ""
+        date_str = ts[:10]   if len(ts) >= 10 else ""
+        time_display = time_str if date_str == now_date else f"{date_str} {time_str}"
+        ta = "right" if is_mine else "left"
+        bubbles_html += (
+            f'<div style="display:flex;flex-direction:{flex_dir};align-items:flex-start;'
+            f'gap:8px;margin-bottom:12px;max-width:82%;">'
+            f'<div style="flex-shrink:0;width:32px;height:32px;border-radius:50%;'
+            f'background:{mrc}1a;border:2px solid {mrc};display:flex;align-items:center;'
+            f'justify-content:center;font-size:0.58rem;font-weight:800;color:{mrc};">{initials}</div>'
+            f'<div style="flex:1;min-width:0;">'
+            f'<div style="font-size:0.7rem;font-weight:700;color:{mrc};'
+            f'margin-bottom:3px;text-align:{ta};">'
+            f'{m["from"]} <span style="color:#475569;font-weight:400;font-size:0.67rem;">'
+            f'{time_display}</span></div>'
+            f'<div style="background:{bg};border:{bd};border-radius:{br};padding:8px 12px;">'
+            f'<div style="color:#cbd5e1;font-size:0.84rem;line-height:1.55;word-break:break-word;">'
+            f'{m.get("text", "")}</div></div></div></div>'
+        )
+    st.markdown(
+        f'<div style="height:360px;overflow-y:auto;display:flex;flex-direction:column;'
+        f'padding:14px;background:linear-gradient(180deg,#06090f 0%,#080d1a 100%);'
+        f'border:1px solid #1e293b;border-radius:10px;">'
+        f'{bubbles_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+@st.fragment(run_every=2)
+def _dm_msg_poller(current_role: str):
+    """Silent polling fragment for DMs — triggers full rerun when new messages arrive."""
+    sel = st.session_state.get("dm_selected")
+    if sel:
+        msgs = store.get_thread(current_role, sel)
+        sig = str([(m.get("ts", ""), m.get("text", "")) for m in msgs])
+        sig_key = f"dm_sig_{current_role}_{sel}"
+        if st.session_state.get(sig_key) != sig:
+            st.session_state[sig_key] = sig
+            st.session_state[f"dm_msgs_{current_role}_{sel}"] = msgs
+            st.session_state[f"dm_tick_{current_role}_{sel}"] = datetime.now().strftime("%H:%M:%S")
+            st.rerun()
+    st.markdown('<div style="height:0;overflow:hidden;"></div>', unsafe_allow_html=True)
+
+
+def _dm_compose(current_role: str):
+    """Stable DM compose form — lives OUTSIDE the polling fragment so it never blinks."""
+    sel = st.session_state.get("dm_selected")
+    if not sel:
+        return
+    with st.container(border=True):
+        with st.form(f"dm_form_{current_role}_{sel}", clear_on_submit=True):
+            msg_text = st.text_area(
+                "dm_msg",
+                placeholder=f"Message {sel}…",
+                label_visibility="collapsed",
+                height=60,
+            )
+            _, fc2 = st.columns([5, 1])
+            with fc2:
+                if st.form_submit_button(
+                    "Send", icon=":material/send:", type="primary", width="stretch",
+                ):
+                    if msg_text and msg_text.strip():
+                        store.send_message(current_role, sel, msg_text.strip())
+                        st.session_state.pop(f"dm_msgs_{current_role}_{sel}", None)
+                        st.session_state.pop(f"dm_sig_{current_role}_{sel}", None)
+                        st.rerun()
+
+
+def render_direct_messages(current_role: str):
+    """1-to-1 direct message threads between roles."""
+    if "dm_selected" not in st.session_state:
+        st.session_state.dm_selected = None
+
+    col_list, col_msgs = st.columns([1, 3], gap="medium")
+
+    with col_list:
+        st.markdown(
+            '<div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;'
+            'letter-spacing:0.1em;color:#475569;margin-bottom:10px;">Direct Messages</div>',
+            unsafe_allow_html=True,
+        )
+        other_roles = [r for r in ALL_ROLES if r != current_role]
+        new_target = st.selectbox(
+            "new_dm", ["— select —"] + other_roles,
+            key=f"dm_new_{current_role}", label_visibility="collapsed",
+        )
+        if st.button("Start conversation", key=f"dm_start_{current_role}", width="stretch"):
+            if new_target != "— select —":
+                st.session_state.dm_selected = new_target
+                st.rerun()
+        st.markdown('<hr style="border-color:#1e293b;margin:8px 0;">', unsafe_allow_html=True)
+
+        inbox = store.get_inbox(current_role)
+        if not inbox:
+            st.markdown(
+                '<div style="color:#334155;font-size:0.78rem;padding:8px 0;">No conversations yet.</div>',
+                unsafe_allow_html=True,
+            )
+        for thread in inbox:
+            other  = thread["other"]
+            last   = thread["last"]
+            active = st.session_state.dm_selected == other
+            preview = ""
+            if last:
+                snippet = last.get("text", "")[:28]
+                preview = f"{last['from'].split()[0]}: {snippet}"
+            if st.button(
+                other,
+                key=f"dm_btn_{other}_{current_role}",
+                type="primary" if active else "secondary",
+                width="stretch",
+            ):
+                st.session_state.dm_selected = other
+                st.rerun()
+            if preview:
+                st.markdown(
+                    f'<div style="font-size:0.66rem;color:#475569;margin:-4px 0 6px 2px;'
+                    f'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">{preview}</div>',
+                    unsafe_allow_html=True,
+                )
+
+    with col_msgs:
+        _dm_msg_display(current_role)
+        _dm_msg_poller(current_role)
+        _dm_compose(current_role)
 
 
 def view_channels_page(*, role, **_):
     info_card(
-        "Team Channels",
-        "Real-time team communication across all operational channels. Select a channel to read and post messages.",
+        "Team Communication",
+        "Team-wide channels and 1:1 direct messages. Use channels for group updates, DMs for private conversations.",
     )
-    render_channels(role)
+    tab_ch, tab_dm = st.tabs(["Channels", "Direct Messages"])
+    with tab_ch:
+        render_channels(role)
+    with tab_dm:
+        render_direct_messages(role)
 
 
 # ============================================================

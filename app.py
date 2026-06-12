@@ -38,7 +38,7 @@ html, body, [class*="css"] {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
-.block-container { padding-top: 1.2rem; padding-bottom: 3rem; max-width: 1520px; }
+.block-container { padding-top: 1.2rem; padding-bottom: 3rem; max-width: 100%; }
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.09); border-radius: 10px; }
@@ -51,7 +51,9 @@ header[data-testid="stHeader"] {
 }
 header[data-testid="stHeader"] [data-testid="stToolbarActions"],
 header[data-testid="stHeader"] [data-testid="stMainMenu"],
-[data-testid="stDeployButton"] { display: none !important; }
+header[data-testid="stHeader"] [data-testid="stStatusWidget"],
+[data-testid="stDeployButton"],
+[data-testid="stAppDeployButton"] { display: none !important; }
 header[data-testid="stHeader"] [data-testid="stSidebarCollapseButton"],
 [data-testid="collapsedControl"] { display: flex !important; visibility: visible !important; }
 
@@ -77,7 +79,6 @@ section[data-testid="stSidebar"] div[data-testid="stVerticalBlockBorderWrapper"]
 .sb-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
 .sb-logo-img {
     width: 38px; height: 38px; object-fit: contain; flex-shrink: 0;
-    border-radius: 8px; background: #0d1120; border: 1px solid rgba(255,255,255,0.08); padding: 4px;
 }
 .sb-brand-name { color: #e2e8f0; font-weight: 700; font-size: 0.94rem; line-height: 1.25; }
 .sb-brand-tag { color: #2d3f55; font-size: 0.69rem; line-height: 1.3; }
@@ -130,8 +131,8 @@ section[data-testid="stSidebar"] div[data-testid="stVerticalBlockBorderWrapper"]
 .info-card-desc { color: #475569; font-size: 0.78rem; line-height: 1.6; margin: 0; max-width: 100ch; }
 
 /* ── Metric cards ─────────────────────────────────────────────────── */
-div[data-testid="stMetric"] { background: #0d1120; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 16px 18px 14px; transition: border-color 0.2s, box-shadow 0.2s; }
-div[data-testid="stMetric"]:hover { border-color: rgba(34,211,238,0.28); box-shadow: 0 0 18px rgba(34,211,238,0.05); }
+div[data-testid="stMetric"] { background: linear-gradient(160deg, #0f1728 0%, #0d1120 100%); border: 1px solid rgba(255,255,255,0.07); border-top: 2px solid rgba(34,211,238,0.32) !important; border-radius: 10px; padding: 16px 18px 14px; transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s; }
+div[data-testid="stMetric"]:hover { border-color: rgba(34,211,238,0.22); border-top-color: rgba(34,211,238,0.7) !important; box-shadow: 0 6px 28px rgba(34,211,238,0.08); transform: translateY(-2px); }
 div[data-testid="stMetric"] > div:first-child > label { color: #2d3f55 !important; font-size: 0.66rem !important; font-weight: 700 !important; text-transform: uppercase !important; letter-spacing: 0.11em !important; }
 div[data-testid="stMetricValue"] > div { color: #f1f5f9 !important; font-size: 1.55rem !important; font-weight: 700 !important; font-family: 'Inter', sans-serif !important; letter-spacing: -0.025em !important; line-height: 1.15 !important; }
 div[data-testid="stMetricDelta"] span { font-size: 0.74rem; }
@@ -161,13 +162,13 @@ div[data-testid="stVerticalBlockBorderWrapper"] > div { gap: 0.9rem; }
 /* ── Forms ────────────────────────────────────────────────────────── */
 div[data-testid="stForm"] { border: 1px solid rgba(255,255,255,0.07) !important; border-radius: 10px !important; background: #090d1b; }
 
-/* ── Tabs ─────────────────────────────────────────────────────────── */
-div[data-baseweb="tab-list"] { background: transparent !important; gap: 2px; }
-button[data-baseweb="tab"] { font-family: 'Inter', sans-serif !important; font-size: 0.84rem !important; font-weight: 500 !important; color: #475569 !important; padding: 8px 14px !important; background: transparent !important; transition: color 0.15s !important; }
-button[data-baseweb="tab"]:hover { color: #94a3b8 !important; }
-button[data-baseweb="tab"][aria-selected="true"] { color: #f1f5f9 !important; font-weight: 600 !important; }
-div[data-baseweb="tab-highlight"] { background: #22d3ee !important; height: 2px !important; }
-div[data-baseweb="tab-border"] { background: rgba(255,255,255,0.07) !important; height: 1px !important; }
+/* ── Tabs — pill style ────────────────────────────────────────────── */
+div[data-baseweb="tab-list"] { background: rgba(255,255,255,0.025) !important; border-radius: 9px !important; padding: 3px !important; gap: 2px !important; border: 1px solid rgba(255,255,255,0.06) !important; }
+button[data-baseweb="tab"] { font-family: 'Inter', sans-serif !important; font-size: 0.82rem !important; font-weight: 500 !important; color: #475569 !important; padding: 7px 16px !important; background: transparent !important; border-radius: 7px !important; transition: all 0.15s !important; }
+button[data-baseweb="tab"]:hover { color: #94a3b8 !important; background: rgba(255,255,255,0.04) !important; }
+button[data-baseweb="tab"][aria-selected="true"] { color: #f1f5f9 !important; font-weight: 600 !important; background: rgba(34,211,238,0.1) !important; border: 1px solid rgba(34,211,238,0.2) !important; }
+div[data-baseweb="tab-highlight"] { display: none !important; }
+div[data-baseweb="tab-border"] { display: none !important; }
 
 /* ── DataFrames ───────────────────────────────────────────────────── */
 div[data-testid="stDataFrame"] { border: 1px solid rgba(255,255,255,0.07) !important; border-radius: 10px !important; overflow: hidden; }
@@ -266,6 +267,67 @@ section[data-testid="stSidebar"] .stButton > button[kind="tertiary"]:hover {
     background: rgba(255,255,255,0.04) !important; color: #64748b !important;
 }
 
+/* ── Widget labels ────────────────────────────────────────────────── */
+div[data-testid="stWidgetLabel"] p,
+div[data-testid="stWidgetLabel"] label {
+    color: #253650 !important; font-size: 0.68rem !important; font-weight: 700 !important;
+    text-transform: uppercase !important; letter-spacing: 0.1em !important;
+}
+
+/* ── Toggle ───────────────────────────────────────────────────────── */
+div[data-testid="stToggle"] div[role="switch"] { background: rgba(255,255,255,0.08) !important; border: 1px solid rgba(255,255,255,0.12) !important; transition: background 0.2s, border-color 0.2s !important; }
+div[data-testid="stToggle"] div[role="switch"][aria-checked="true"] { background: rgba(34,211,238,0.25) !important; border-color: rgba(34,211,238,0.55) !important; }
+
+/* ── Select-slider track ─────────────────────────────────────────── */
+div[data-testid="stSlider"] div[data-baseweb="slider"] [role="progressbar"] { background: linear-gradient(to right, #22d3ee, #8b5cf6) !important; }
+div[data-testid="stSlider"] div[data-baseweb="slider"] [role="slider"] { background: #22d3ee !important; border-color: #22d3ee !important; box-shadow: 0 0 0 3px rgba(34,211,238,0.2), 0 0 10px rgba(34,211,238,0.35) !important; }
+
+/* ── Multiselect tags ────────────────────────────────────────────── */
+span[data-baseweb="tag"] { background: rgba(34,211,238,0.08) !important; border: 1px solid rgba(34,211,238,0.22) !important; border-radius: 5px !important; padding: 0 6px !important; font-size: 0.73rem !important; }
+span[data-baseweb="tag"] * { color: #67e8f9 !important; fill: #67e8f9 !important; }
+
+/* ── Sidebar section labels ──────────────────────────────────────── */
+.sb-section { color: #1e3050 !important; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; margin: 16px 0 6px; padding-bottom: 5px; border-bottom: 1px solid rgba(255,255,255,0.04); display: block; }
+
+/* ── Nav group labels ────────────────────────────────────────────── */
+.nav-group-label { color: #1e3050 !important; font-size: 0.59rem; font-weight: 700; letter-spacing: 0.17em; text-transform: uppercase; padding: 10px 6px 3px; line-height: 1; }
+
+/* ── Sidebar nav: alignment ──────────────────────────────────────── */
+section[data-testid="stSidebar"] .stButton > button { padding-left: 12px !important; justify-content: flex-start !important; text-align: left !important; }
+section[data-testid="stSidebar"] .stButton > button > div { justify-content: flex-start !important; text-align: left !important; width: 100% !important; }
+section[data-testid="stSidebar"] .stButton > button p { text-align: left !important; margin: 0 !important; }
+
+/* ── Expander open state ──────────────────────────────────────────── */
+div[data-testid="stExpander"] details[open] { border-color: rgba(34,211,238,0.18) !important; }
+div[data-testid="stExpander"] details[open] > summary { color: #67e8f9 !important; }
+
+/* ── Containers: subtle gradient ─────────────────────────────────── */
+div[data-testid="stVerticalBlockBorderWrapper"] { background: linear-gradient(160deg, #0b0f1e 0%, #090d1b 100%) !important; }
+
+/* ── Banner: subtle glow ─────────────────────────────────────────── */
+.gh-banner { background: linear-gradient(135deg, #0d1120 0%, #0a0e1c 100%) !important; box-shadow: 0 1px 0 rgba(34,211,238,0.06) !important; }
+
+/* ── Alerts ───────────────────────────────────────────────────────── */
+div[data-testid="stAlert"] { border-radius: 8px !important; border-left-width: 3px !important; }
+
+/* ── Code blocks ──────────────────────────────────────────────────── */
+div[data-testid="stCode"] pre { background: #060910 !important; border: 1px solid rgba(255,255,255,0.07) !important; border-radius: 8px !important; }
+
+/* ── Page header ──────────────────────────────────────────────────── */
+.page-hdr { padding: 2px 0 20px; }
+.page-hdr-title {
+    font-size: 1.3rem; font-weight: 700; color: #f1f5f9;
+    letter-spacing: -0.02em; line-height: 1.3; margin: 0 0 8px;
+    display: flex; align-items: center; gap: 12px;
+}
+.page-hdr-title::before {
+    content: ""; display: inline-block; width: 3px; min-height: 1.4em;
+    background: linear-gradient(to bottom, #22d3ee, #8b5cf6);
+    border-radius: 3px; flex-shrink: 0; align-self: stretch;
+}
+.page-hdr-desc { color: #2d4060; font-size: 0.82rem; line-height: 1.65; max-width: 82ch; margin: 0; padding-left: 15px; }
+.page-hdr-rule { height: 1px; background: linear-gradient(to right, rgba(34,211,238,0.22), rgba(139,92,246,0.1), transparent); margin: 16px 0 0; border: none; }
+
 /* ── Login ─────────────────────────────────────────────────────────── */
 .login-brand { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 6px; }
 .login-logo { width: 52px; height: 52px; border-radius: 12px; }
@@ -275,6 +337,21 @@ section[data-testid="stSidebar"] .stButton > button[kind="tertiary"]:hover {
 .login-accounts-label { color: #2d3f55; font-size: 0.63rem; font-weight: 700; letter-spacing: 0.11em; text-transform: uppercase; margin-bottom: 7px; }
 .login-account-row { color: #64748b; font-size: 0.8rem; padding: 3px 0; display: flex; justify-content: space-between; gap: 10px; }
 .login-account-role { color: #22d3ee; font-weight: 600; }
+
+/* ── Discord-style chat feed ──────────────────────────────────────── */
+.dc-feed { display: flex; flex-direction: column; padding: 12px 4px; }
+.dc-row { display: flex; gap: 14px; padding: 2px 12px; border-radius: 6px; position: relative; }
+.dc-row:hover { background: rgba(255,255,255,0.025); }
+.dc-row:hover .dc-hover-ts { opacity: 1; }
+.dc-row.dc-first { margin-top: 14px; }
+.dc-avatar { flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.68rem; font-weight: 800; }
+.dc-avatar-spacer { flex-shrink: 0; width: 40px; display: flex; align-items: flex-start; justify-content: center; }
+.dc-hover-ts { font-size: 0.62rem; color: #45526b; opacity: 0; padding-top: 5px; transition: opacity 0.1s; white-space: nowrap; }
+.dc-body { flex: 1; min-width: 0; }
+.dc-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+.dc-username { font-size: 0.86rem; font-weight: 700; }
+.dc-time { font-size: 0.66rem; color: #45526b; }
+.dc-text { color: #c8cfdb; font-size: 0.87rem; line-height: 1.55; word-break: break-word; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -409,16 +486,16 @@ if "active_module" not in st.session_state:
     st.session_state.active_module = "overview"
 
 _NAV = [
-    ("DASHBOARD",      [("overview",        "Overview")]),
-    ("INFRASTRUCTURE", [("server-maint",    "Server Maintenance"),
-                        ("asset-mgmt",      "Asset Management")]),
-    ("DEVELOPMENT",    [("website-dev",     "Website Development"),
-                        ("bug-performance", "Bug & Performance")]),
-    ("COORDINATION",   [("uiux-infra",      "UI/UX & Infrastructure"),
-                        ("client-support",  "Client Support"),
-                        ("workflow-docs",   "Workflow Docs")]),
-    ("REPORTING",      [("ops-reporting",   "Operational Reporting")]),
-    ("COMMUNICATION",  [("channels-page",   "Channels")]),
+    ("DASHBOARD",      [("overview",        "Overview",               ":material/dashboard:")]),
+    ("INFRASTRUCTURE", [("server-maint",    "Server Maintenance",     ":material/dns:"),
+                        ("asset-mgmt",      "Asset Management",       ":material/inventory_2:")]),
+    ("DEVELOPMENT",    [("website-dev",     "Website Development",    ":material/web:"),
+                        ("bug-performance", "Bug & Performance",      ":material/bug_report:")]),
+    ("COORDINATION",   [("uiux-infra",      "UI/UX & Infrastructure", ":material/design_services:"),
+                        ("client-support",  "Client Support",         ":material/support_agent:"),
+                        ("workflow-docs",   "Workflow Docs",          ":material/article:")]),
+    ("REPORTING",      [("ops-reporting",   "Operational Reporting",  ":material/bar_chart:")]),
+    ("COMMUNICATION",  [("channels-page",   "Channels",               ":material/forum:")]),
 ]
 
 _MODULE_VIEW = {
@@ -432,6 +509,7 @@ _MODULE_VIEW = {
     "ops-reporting":   views.view_ops_reporting,
     "channels-page":   views.view_channels_page,
 }
+
 
 TIER_PILL_CLASS = {"Enterprise": "tier-ent", "Mid-Market": "tier-mid", "Growth": "tier-grw"}
 
@@ -448,6 +526,20 @@ with st.sidebar:
         """,
         unsafe_allow_html=True,
     )
+
+    st.markdown('<div class="sb-section">Navigation</div>', unsafe_allow_html=True)
+    for group_label, items in _NAV:
+        st.markdown(f'<div class="nav-group-label">{group_label}</div>', unsafe_allow_html=True)
+        for mod_id, mod_label, _icon in items:
+            is_active = st.session_state.active_module == mod_id
+            if st.button(
+                mod_label,
+                key=f"nav_{mod_id}",
+                type="primary" if is_active else "secondary",
+                width="stretch",
+            ):
+                st.session_state.active_module = mod_id
+                st.rerun()
 
     st.markdown('<div class="sb-section">Account</div>', unsafe_allow_html=True)
     client_name = st.selectbox(
@@ -493,20 +585,6 @@ with st.sidebar:
         default=sorted({s["region"] for s in fleet_template}),
     )
 
-    st.markdown('<div class="sb-section">Navigation</div>', unsafe_allow_html=True)
-    for group_label, items in _NAV:
-        st.markdown(f'<div class="nav-group-label">{group_label}</div>', unsafe_allow_html=True)
-        for mod_id, mod_label in items:
-            is_active = st.session_state.active_module == mod_id
-            if st.button(
-                mod_label,
-                key=f"nav_{mod_id}",
-                type="primary" if is_active else "secondary",
-                use_container_width=True,
-            ):
-                st.session_state.active_module = mod_id
-                st.rerun()
-
     st.markdown('<div class="sb-section">Session</div>', unsafe_allow_html=True)
     st.markdown(
         f"""
@@ -539,15 +617,23 @@ with st.sidebar:
         st.caption(f"Build: {tm.PROVIDER} console &middot; v1.0".replace("&middot;", "·"))
 
 # ---------------------------------------------------------------------------
-# Pull current telemetry for the selected client
+# Pull current telemetry for the selected client (cached per seed+filters)
 # ---------------------------------------------------------------------------
+@st.cache_data(ttl=300, show_spinner=False)
+def _build_telemetry(client_code, seed, window_hours, region_tuple):
+    _fleet = tm.build_fleet(next(c for c in tm.CLIENTS if c["code"] == client_code))
+    _servers = [s for s in _fleet if s["region"] in region_tuple] or _fleet
+    _hist = {s["name"]: tm.generate_history(s, hours=window_hours, jitter_seed=seed) for s in _servers}
+    _snaps = [tm.latest_snapshot(_hist[s["name"]], s) for s in _servers]
+    _alerts = tm.generate_alerts(_snaps, jitter_seed=seed)
+    _backs  = tm.generate_backup_log(_snaps, jitter_seed=seed)
+    _maint  = tm.generate_maintenance_schedule(_snaps, jitter_seed=seed)
+    return _servers, _hist, _snaps, _alerts, _backs, _maint
+
 seed = f"{client['code']}-{st.session_state.jitter_seed}"
-servers = [s for s in fleet_template if s["region"] in region_filter] or fleet_template
-histories = {s["name"]: tm.generate_history(s, hours=window_hours, jitter_seed=seed) for s in servers}
-snapshots = [tm.latest_snapshot(histories[s["name"]], s) for s in servers]
-alerts = tm.generate_alerts(snapshots, jitter_seed=seed)
-backups = tm.generate_backup_log(snapshots, jitter_seed=seed)
-maintenance = tm.generate_maintenance_schedule(snapshots, jitter_seed=seed)
+servers, histories, snapshots, alerts, backups, maintenance = _build_telemetry(
+    client["code"], seed, window_hours, tuple(sorted(region_filter))
+)
 server_names = [s["name"] for s in snapshots]
 
 # ---------------------------------------------------------------------------
@@ -618,7 +704,11 @@ st.write("")
 # ---------------------------------------------------------------------------
 # Role / module dispatch
 # ---------------------------------------------------------------------------
-store.get()
+if "store" not in st.session_state:
+    with st.spinner("Loading workspace data…"):
+        store.get()
+else:
+    store.get()
 _role = ACCOUNTS.get(st.session_state.auth_user, "")
 _mod  = st.session_state.active_module
 
