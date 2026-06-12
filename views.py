@@ -400,40 +400,40 @@ def _channel_msg_display(current_role: str):
     hc1, hc2 = st.columns([5, 1])
     with hc1:
         st.markdown(
-            f'<div style="font-size:1.05rem;font-weight:700;color:#e2e8f0;'
+            f'<div style="font-size:1.05rem;font-weight:700;color:var(--text-2);'
             f'display:flex;align-items:center;">'
             f'{ch_icon_svg}{sel_ch["name"]}</div>'
-            f'<div style="font-size:0.78rem;color:#64748b;margin-top:2px;">'
+            f'<div style="font-size:0.78rem;color:var(--text-4);margin-top:2px;">'
             f'{sel_ch["desc"]}</div>',
             unsafe_allow_html=True,
         )
     with hc2:
-        u_svg = _svg(_SVG_USERS, 12, "#475569", "margin-right:3px;")
-        c_svg = _svg(_SVG_CHAT,  12, "#475569", "margin-right:3px;margin-left:8px;")
+        u_svg = _svg(_SVG_USERS, 12, "var(--text-5)", "margin-right:3px;")
+        c_svg = _svg(_SVG_CHAT,  12, "var(--text-5)", "margin-right:3px;margin-left:8px;")
         _tick = st.session_state.get(f"ch_tick_{sel_id}", "—")
         st.markdown(
-            f'<div style="text-align:right;font-size:0.72rem;color:#475569;padding-top:8px;">'
+            f'<div style="text-align:right;font-size:0.72rem;color:var(--text-5);padding-top:8px;">'
             f'{u_svg}{len(ALL_ROLES)}&nbsp;{c_svg}{len(msgs)}'
             f'&nbsp;<span style="color:#22c55e;font-size:0.65rem;" title="last synced">● {_tick}</span></div>',
             unsafe_allow_html=True,
         )
-    st.markdown('<hr style="border-color:#1e293b;margin:6px 0 10px;">', unsafe_allow_html=True)
+    st.markdown('<hr style="border-color:var(--border-color);margin:6px 0 10px;">', unsafe_allow_html=True)
 
     bubbles_html = ""
     if not msgs:
-        empty_icon = _svg(_CH_SVG.get(sel_id, ""), 40, "#1e293b")
+        empty_icon = _svg(_CH_SVG.get(sel_id, ""), 40, "var(--border-color)")
         bubbles_html = (
             f'<div style="display:flex;flex-direction:column;align-items:center;'
             f'justify-content:center;height:100%;padding:52px 0;">'
             f'<div style="margin-bottom:14px;">{empty_icon}</div>'
-            f'<div style="color:#334155;font-size:0.9rem;font-weight:600;">No messages yet</div>'
-            f'<div style="color:#1e293b;font-size:0.78rem;margin-top:4px;">'
+            f'<div style="color:var(--text-6);font-size:0.9rem;font-weight:600;">No messages yet</div>'
+            f'<div style="color:var(--border-color);font-size:0.78rem;margin-top:4px;">'
             f'Be the first to post in {sel_ch["name"]}.</div></div>'
         )
 
     prev_from, prev_dt = None, None
     for m in msgs[-100:]:
-        rc       = _ROLE_COLOR.get(m["from"], "#94a3b8")
+        rc       = _ROLE_COLOR.get(m["from"], "var(--text-3)")
         initials = _role_avatar(m["from"])
 
         ts = m.get("ts", "")
@@ -446,26 +446,26 @@ def _channel_msg_display(current_role: str):
         att = m.get("attachment")
         if att:
             if att.get("mime", "") in _IMAGE_MIMES:
-                img_label_svg = _svg(_SVG_IMG, 11, "#475569", "margin-right:3px;")
+                img_label_svg = _svg(_SVG_IMG, 11, "var(--text-5)", "margin-right:3px;")
                 att_html = (
                     f'<div style="margin-top:7px;">'
                     f'<img src="data:{att["mime"]};base64,{att["data_b64"]}" '
                     f'style="max-width:260px;max-height:260px;border-radius:8px;'
-                    f'display:block;border:1px solid rgba(255,255,255,0.08);" />'
-                    f'<div style="font-size:0.67rem;color:#475569;margin-top:3px;">'
+                    f'display:block;border:1px solid rgba(var(--line-rgb),0.08);" />'
+                    f'<div style="font-size:0.67rem;color:var(--text-5);margin-top:3px;">'
                     f'{img_label_svg}{att["name"]} &middot; {_fmt_size(att.get("size", 0))}'
                     f'</div></div>'
                 )
             else:
-                file_svg = _svg(_SVG_CLIP, 20, "#64748b")
+                file_svg = _svg(_SVG_CLIP, 20, "var(--text-4)")
                 att_html = (
-                    f'<div style="margin-top:7px;background:rgba(255,255,255,0.04);'
-                    f'border:1px solid rgba(255,255,255,0.09);border-radius:8px;'
+                    f'<div style="margin-top:7px;background:rgba(var(--line-rgb),0.04);'
+                    f'border:1px solid rgba(var(--line-rgb),0.09);border-radius:8px;'
                     f'padding:9px 13px;display:inline-flex;align-items:center;gap:10px;">'
                     f'{file_svg}'
                     f'<div>'
-                    f'<div style="font-size:0.82rem;color:#e2e8f0;font-weight:600;">{att["name"]}</div>'
-                    f'<div style="font-size:0.69rem;color:#64748b;">{_fmt_size(att.get("size", 0))}</div>'
+                    f'<div style="font-size:0.82rem;color:var(--text-2);font-weight:600;">{att["name"]}</div>'
+                    f'<div style="font-size:0.69rem;color:var(--text-4);">{_fmt_size(att.get("size", 0))}</div>'
                     f'</div></div>'
                 )
 
@@ -504,8 +504,8 @@ def _channel_msg_display(current_role: str):
 
     st.markdown(
         f'<div class="dc-feed" style="height:640px;overflow-y:auto;'
-        f'background:linear-gradient(180deg,#06090f 0%,#080d1a 100%);'
-        f'border:1px solid #1e293b;border-radius:10px;">'
+        f'background:linear-gradient(180deg,var(--bg-inset) 0%,var(--bg-surface-2) 100%);'
+        f'border:1px solid var(--border-color);border-radius:10px;">'
         f'{bubbles_html}</div>',
         unsafe_allow_html=True,
     )
@@ -548,9 +548,9 @@ def _channel_compose(current_role: str):
             fc1, fc2 = st.columns([5, 1])
             with fc1:
                 if attach_file:
-                    clip_s = _svg(_SVG_CLIP, 12, "#64748b", "margin-right:4px;")
+                    clip_s = _svg(_SVG_CLIP, 12, "var(--text-4)", "margin-right:4px;")
                     st.markdown(
-                        f'<div style="font-size:0.78rem;color:#64748b;padding-top:4px;">'
+                        f'<div style="font-size:0.78rem;color:var(--text-4);padding-top:4px;">'
                         f'{clip_s}{attach_file.name} &middot; {_fmt_size(attach_file.size)}</div>',
                         unsafe_allow_html=True,
                     )
@@ -604,7 +604,7 @@ def render_channels(current_role: str):
     with col_list:
         st.markdown(
             '<div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;'
-            'letter-spacing:0.1em;color:#475569;margin-bottom:10px;">Team Channels</div>',
+            'letter-spacing:0.1em;color:var(--text-5);margin-bottom:10px;">Team Channels</div>',
             unsafe_allow_html=True,
         )
         _summaries = store.get_channel_summaries()
@@ -612,7 +612,7 @@ def render_channels(current_role: str):
             msgs    = _summaries.get(ch["id"], [])
             unread  = max(0, len(msgs) - st.session_state.ch_last_seen.get(ch["id"], 0))
             active  = st.session_state.ch_selected == ch["id"]
-            ic_col  = "#22d3ee" if active else "#475569"
+            ic_col  = "#22d3ee" if active else "var(--text-5)"
 
             # preview under button
             preview_line = ""
@@ -652,7 +652,7 @@ def render_channels(current_role: str):
 
             if preview_line:
                 st.markdown(
-                    f'<div style="font-size:0.66rem;color:#475569;margin:-4px 0 4px 2px;'
+                    f'<div style="font-size:0.66rem;color:var(--text-5);margin:-4px 0 4px 2px;'
                     f'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">{preview_line}</div>',
                     unsafe_allow_html=True,
                 )
@@ -1029,7 +1029,7 @@ def _server_detail_panel(servers: list, snapshots: list, histories: dict,
                     live_df = pd.DataFrame(buf).set_index("timestamp")
                     st.markdown(
                         '<span class="live-indicator"><span class="live-dot"></span>LIVE</span>'
-                        f'&nbsp;<span style="color:#64748b;font-size:0.78rem;">streaming · CPU, memory, disk · '
+                        f'&nbsp;<span style="color:var(--text-4);font-size:0.78rem;">streaming · CPU, memory, disk · '
                         f'updated {pd.Timestamp.now().strftime("%H:%M:%S")}</span>',
                         unsafe_allow_html=True,
                     )
@@ -1668,9 +1668,9 @@ def view_infra_engineer(client, snapshots, alerts, backups, maintenance,
                 icon = ":material/check_circle:" if item["passed"] else ":material/cancel:"
                 color = "#22c55e" if item["passed"] else "#ef4444"
                 st.markdown(
-                    f'<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid #1a2338;">'
+                    f'<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--border-color);">'
                     f'<span style="color:{color};font-size:1.1rem;">{"✅" if item["passed"] else "❌"}</span>'
-                    f'<span style="color:#cbd5e1;font-size:0.87rem;">{item["check"]}</span>'
+                    f'<span style="color:var(--text-2);font-size:0.87rem;">{item["check"]}</span>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
@@ -1790,7 +1790,7 @@ def view_data_analyst(client, snapshots, alerts, backups, maintenance,
             badge_s = SEVERITY_STYLE.get(row["severity"], "")
             st.markdown(
                 f'<span style="{BADGE_CSS}{badge_s}">{row["severity"]}</span>'
-                f'<span style="color:#cbd5e1;font-size:0.88rem;margin-left:12px;">{row["count"]} events</span>',
+                f'<span style="color:var(--text-2);font-size:0.88rem;margin-left:12px;">{row["count"]} events</span>',
                 unsafe_allow_html=True,
             )
 
@@ -1879,13 +1879,13 @@ def view_server_maint(*, client, snapshots, servers, seed, role, **_):
         active_wins = [w for w in windows if w.get("status") not in ("Completed", "Cancelled")]
         if not active_wins:
             st.markdown(
-                '<div style="padding:32px;text-align:center;color:#475569;'
-                'background:rgba(15,23,42,0.6);border-radius:10px;border:1px solid #1e293b;">'
+                '<div style="padding:32px;text-align:center;color:var(--text-5);'
+                'background:rgba(var(--bg-overlay-rgb),0.6);border-radius:10px;border:1px solid var(--border-color);">'
                 'No scheduled maintenance windows. Use the <b>Create Window</b> tab to schedule one.</div>',
                 unsafe_allow_html=True,
             )
         for w in active_wins:
-            status_color = {"Scheduled": "#22d3ee", "In Progress": "#f59e0b", "Completed": "#22c55e", "Cancelled": "#475569"}.get(w.get("status", ""), "#475569")
+            status_color = {"Scheduled": "#22d3ee", "In Progress": "#f59e0b", "Completed": "#22c55e", "Cancelled": "var(--text-5)"}.get(w.get("status", ""), "var(--text-5)")
             with st.expander(f"🔧 {w.get('title', 'Untitled')} — {w.get('change_type', '')}  [{w.get('status', '')}]", expanded=False):
                 c1, c2 = st.columns(2)
                 with c1:
@@ -2083,7 +2083,7 @@ def view_website_dev(*, client, role, seed, **_):
         st.markdown("---")
         if not projects:
             st.markdown(
-                '<div style="padding:40px;text-align:center;color:#475569;background:rgba(15,23,42,0.6);border-radius:10px;border:1px solid #1e293b;">'
+                '<div style="padding:40px;text-align:center;color:var(--text-5);background:rgba(var(--bg-overlay-rgb),0.6);border-radius:10px;border:1px solid var(--border-color);">'
                 'No projects yet. Use the <b>New Project</b> tab to create one.</div>',
                 unsafe_allow_html=True,
             )
@@ -2106,7 +2106,7 @@ def view_website_dev(*, client, role, seed, **_):
 
     with tabs[1]:
         if not projects:
-            st.markdown('<div style="padding:28px;text-align:center;color:#475569;">Create a project first to see tasks.</div>', unsafe_allow_html=True)
+            st.markdown('<div style="padding:28px;text-align:center;color:var(--text-5);">Create a project first to see tasks.</div>', unsafe_allow_html=True)
         else:
             proj_names = [p.get("name", p["id"]) for p in projects]
             sel_proj_name = st.selectbox("Project", proj_names, key="task_proj_sel")
@@ -2125,7 +2125,7 @@ def view_website_dev(*, client, role, seed, **_):
 
             todo_col, prog_col, done_col = st.columns(3)
             col_labels = {
-                "todo":        ('<div style="font-size:0.78rem;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">TODO</div>', "#f59e0b", "⬜", "rgba(15,23,42,0.8)", "#1e293b"),
+                "todo":        ('<div style="font-size:0.78rem;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">TODO</div>', "#f59e0b", "⬜", "rgba(var(--bg-overlay-rgb),0.8)", "var(--border-color)"),
                 "in-progress": ('<div style="font-size:0.78rem;font-weight:700;color:#22d3ee;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">IN PROGRESS</div>', "#22d3ee", "🔄", "rgba(34,211,238,0.05)", "rgba(34,211,238,0.18)"),
                 "done":        ('<div style="font-size:0.78rem;font-weight:700;color:#22c55e;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">DONE</div>', "#22c55e", "✅", "rgba(34,197,94,0.05)", "rgba(34,197,94,0.18)"),
             }
@@ -2138,11 +2138,11 @@ def view_website_dev(*, client, role, seed, **_):
                     st.markdown(header_html, unsafe_allow_html=True)
                     col_tasks = [(i, t) for i, t in enumerate(tasks) if t.get("status") == status_key]
                     if not col_tasks:
-                        st.markdown(f'<div style="color:#334155;font-size:0.78rem;padding:10px 0;">No tasks</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div style="color:var(--text-6);font-size:0.78rem;padding:10px 0;">No tasks</div>', unsafe_allow_html=True)
                     for i, t in col_tasks:
                         st.markdown(
                             f'<div style="background:{bg};border:1px solid {bd};border-radius:8px;'
-                            f'padding:9px 12px;margin-bottom:4px;color:#cbd5e1;font-size:0.82rem;">'
+                            f'padding:9px 12px;margin-bottom:4px;color:var(--text-2);font-size:0.82rem;">'
                             f'{icon} {t["name"]}</div>',
                             unsafe_allow_html=True,
                         )
@@ -2215,7 +2215,7 @@ def view_bug_perf(*, client, role, seed, snapshots, **_):
         m4.metric("Resolved", resolved_b)
         st.markdown("---")
         if not bugs:
-            st.markdown('<div style="padding:32px;text-align:center;color:#475569;background:rgba(15,23,42,0.6);border-radius:10px;border:1px solid #1e293b;">No bugs logged yet. Use the <b>Log Issue</b> tab.</div>', unsafe_allow_html=True)
+            st.markdown('<div style="padding:32px;text-align:center;color:var(--text-5);background:rgba(var(--bg-overlay-rgb),0.6);border-radius:10px;border:1px solid var(--border-color);">No bugs logged yet. Use the <b>Log Issue</b> tab.</div>', unsafe_allow_html=True)
         else:
             bug_df = pd.DataFrame([{
                 "ID": b.get("id", "—"), "Title": b.get("title", "—"),
@@ -2270,10 +2270,10 @@ def view_bug_perf(*, client, role, seed, snapshots, **_):
         target_score = 90
         gap = target_score - current_score
         st.markdown(f"""
-<div style="background:rgba(15,23,42,0.8);border:1px solid #1e293b;border-radius:12px;padding:28px;text-align:center;margin-bottom:20px;">
-  <div style="font-size:0.78rem;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Current PageSpeed Score</div>
+<div style="background:rgba(var(--bg-overlay-rgb),0.8);border:1px solid var(--border-color);border-radius:12px;padding:28px;text-align:center;margin-bottom:20px;">
+  <div style="font-size:0.78rem;color:var(--text-5);font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Current PageSpeed Score</div>
   <div style="font-size:4rem;font-weight:800;color:{'#22c55e' if current_score >= 90 else ('#f59e0b' if current_score >= 70 else '#ef4444')};">{current_score}</div>
-  <div style="font-size:0.85rem;color:#64748b;margin-top:4px;">Target: <b style="color:#22d3ee;">{target_score}</b> &nbsp;|&nbsp; Gap: <b style="color:#f59e0b;">{gap} points</b></div>
+  <div style="font-size:0.85rem;color:var(--text-4);margin-top:4px;">Target: <b style="color:#22d3ee;">{target_score}</b> &nbsp;|&nbsp; Gap: <b style="color:#f59e0b;">{gap} points</b></div>
 </div>
 """, unsafe_allow_html=True)
         progress_val = current_score / 100
@@ -2288,7 +2288,7 @@ def view_bug_perf(*, client, role, seed, snapshots, **_):
             ("Eliminate render-blocking resources (defer non-critical CSS/JS)", "#f59e0b"),
         ]
         for rec, color in recommendations:
-            st.markdown(f'<div style="padding:10px 14px;margin-bottom:6px;border-left:3px solid {color};background:rgba(15,23,42,0.7);border-radius:0 8px 8px 0;color:#cbd5e1;font-size:0.84rem;">▸ {rec}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="padding:10px 14px;margin-bottom:6px;border-left:3px solid {color};background:rgba(var(--bg-overlay-rgb),0.7);border-radius:0 8px 8px 0;color:var(--text-2);font-size:0.84rem;">▸ {rec}</div>', unsafe_allow_html=True)
 
     with tabs[3]:
         with st.form("log_bug_form", clear_on_submit=True):
@@ -2351,7 +2351,7 @@ def view_uiux_infra(*, client, role, **_):
     with tabs[1]:
         in_review = [s for s in submissions if s.get("status") in ("Pending Review", "In Review")]
         if not in_review:
-            st.markdown('<div style="padding:32px;text-align:center;color:#475569;background:rgba(15,23,42,0.6);border-radius:10px;border:1px solid #1e293b;">No requests currently in review.</div>', unsafe_allow_html=True)
+            st.markdown('<div style="padding:32px;text-align:center;color:var(--text-5);background:rgba(var(--bg-overlay-rgb),0.6);border-radius:10px;border:1px solid var(--border-color);">No requests currently in review.</div>', unsafe_allow_html=True)
         for s in in_review:
             with st.expander(f"📋 {s.get('title', 'Untitled')} — {s.get('type', '—')} [{s.get('status', '—')}]", expanded=False):
                 c1, c2 = st.columns(2)
@@ -2396,7 +2396,7 @@ def view_client_support_module(*, client, snapshots, alerts, role, **_):
 
     with tabs[0]:
         if not open_tickets:
-            st.markdown('<div style="padding:32px;text-align:center;color:#475569;background:rgba(15,23,42,0.6);border-radius:10px;border:1px solid #1e293b;">No active support cases.</div>', unsafe_allow_html=True)
+            st.markdown('<div style="padding:32px;text-align:center;color:var(--text-5);background:rgba(var(--bg-overlay-rgb),0.6);border-radius:10px;border:1px solid var(--border-color);">No active support cases.</div>', unsafe_allow_html=True)
         for t in open_tickets[:20]:
             with st.expander(f"🎫 #{t.get('id', '—')} — {t.get('title', 'Untitled')} [{t.get('status', '—')}]", expanded=False):
                 c1, c2 = st.columns(2)
@@ -2416,7 +2416,7 @@ def view_client_support_module(*, client, snapshots, alerts, role, **_):
                             note_text_disp = f"[{n.get('ts','')[:16]}] {n.get('author','')}: {n.get('text','')}"
                         else:
                             note_text_disp = str(n)
-                        st.markdown(f'<div style="background:rgba(15,23,42,0.7);border-left:3px solid #22d3ee;padding:8px 12px;border-radius:0 6px 6px 0;margin-bottom:4px;font-size:0.8rem;color:#94a3b8;">{note_text_disp}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div style="background:rgba(var(--bg-overlay-rgb),0.7);border-left:3px solid #22d3ee;padding:8px 12px;border-radius:0 6px 6px 0;margin-bottom:4px;font-size:0.8rem;color:var(--text-3);">{note_text_disp}</div>', unsafe_allow_html=True)
                 with st.form(f"note_form_{t.get('id')}", clear_on_submit=True):
                     note_input = st.text_input("Add note", placeholder="Enter update or resolution note...")
                     if st.form_submit_button("Add Note", type="primary"):
@@ -2444,7 +2444,7 @@ def view_client_support_module(*, client, snapshots, alerts, role, **_):
                      ("P3 — Medium",   "8h response / 24h resolution", rng.randint(90, 100), "#22d3ee"),
                      ("P4 — Low",      "24h response / 72h resolution",rng.randint(92, 100), "#22c55e")]
         for tier, target, compliance, color in sla_tiers:
-            st.markdown(f'<div style="display:flex;align-items:center;justify-content:space-between;background:rgba(15,23,42,0.7);border:1px solid #1e293b;border-radius:8px;padding:12px 18px;margin-bottom:8px;"><span style="color:#e2e8f0;font-weight:600;">{tier}</span><span style="color:#64748b;font-size:0.8rem;">{target}</span><span style="color:{color};font-weight:700;font-size:1.05rem;">{compliance}%</span></div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="display:flex;align-items:center;justify-content:space-between;background:rgba(var(--bg-overlay-rgb),0.7);border:1px solid var(--border-color);border-radius:8px;padding:12px 18px;margin-bottom:8px;"><span style="color:var(--text-2);font-weight:600;">{tier}</span><span style="color:var(--text-4);font-size:0.8rem;">{target}</span><span style="color:{color};font-weight:700;font-size:1.05rem;">{compliance}%</span></div>', unsafe_allow_html=True)
 
     with tabs[2]:
         CONTACTS = [
@@ -2459,25 +2459,25 @@ def view_client_support_module(*, client, snapshots, alerts, role, **_):
         ]
         cols = st.columns(2)
         for i, (name, role_c, email, phone, tier) in enumerate(CONTACTS):
-            tier_color = {"Tier 1": "#22c55e", "Tier 2": "#22d3ee", "Tier 3": "#f59e0b"}.get(tier, "#475569")
+            tier_color = {"Tier 1": "#22c55e", "Tier 2": "#22d3ee", "Tier 3": "#f59e0b"}.get(tier, "var(--text-5)")
             with cols[i % 2]:
                 st.markdown(f"""
-<div style="background:rgba(15,23,42,0.8);border:1px solid #1e293b;border-radius:10px;padding:16px 18px;margin-bottom:12px;">
+<div style="background:rgba(var(--bg-overlay-rgb),0.8);border:1px solid var(--border-color);border-radius:10px;padding:16px 18px;margin-bottom:12px;">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;">
     <div>
-      <div style="font-size:0.95rem;font-weight:700;color:#e2e8f0;">{name}</div>
-      <div style="font-size:0.78rem;color:#64748b;margin-top:2px;">{role_c}</div>
+      <div style="font-size:0.95rem;font-weight:700;color:var(--text-2);">{name}</div>
+      <div style="font-size:0.78rem;color:var(--text-4);margin-top:2px;">{role_c}</div>
     </div>
     <span style="{BADGE_CSS}background:rgba(0,0,0,0.3);color:{tier_color};border:1px solid {tier_color}44;">{tier}</span>
   </div>
-  <div style="margin-top:10px;font-size:0.8rem;color:#94a3b8;">📧 {email}</div>
-  <div style="font-size:0.8rem;color:#94a3b8;">📞 {phone}</div>
+  <div style="margin-top:10px;font-size:0.8rem;color:var(--text-3);">📧 {email}</div>
+  <div style="font-size:0.8rem;color:var(--text-3);">📞 {phone}</div>
 </div>""", unsafe_allow_html=True)
 
     with tabs[3]:
         open_ticket_ids = [f"#{t.get('id', '—')} — {t.get('title', 'Untitled')}" for t in open_tickets]
         if not open_ticket_ids:
-            st.markdown('<div style="padding:28px;text-align:center;color:#475569;">No open tickets available to escalate.</div>', unsafe_allow_html=True)
+            st.markdown('<div style="padding:28px;text-align:center;color:var(--text-5);">No open tickets available to escalate.</div>', unsafe_allow_html=True)
         else:
             with st.form("escalate_form", clear_on_submit=True):
                 st.markdown("#### Escalate Ticket")
@@ -2542,7 +2542,7 @@ def view_workflow_docs(*, role, seed, **_):
         st.markdown(f"**{len(all_docs)} documents** in library ({len(BUILTIN_DOCS)} built-in, {len(stored_docs)} custom)")
         for doc in all_docs:
             cat = doc.get("category", "General")
-            cat_color = CATEGORY_COLORS.get(cat, "#475569")
+            cat_color = CATEGORY_COLORS.get(cat, "var(--text-5)")
             badge_html = f'<span style="{BADGE_CSS}background:rgba(0,0,0,0.3);color:{cat_color};border:1px solid {cat_color}44;">{cat}</span>'
             with st.expander(f"{doc.get('title', 'Untitled')}", expanded=False):
                 st.markdown(badge_html, unsafe_allow_html=True)
@@ -2572,15 +2572,15 @@ def view_workflow_docs(*, role, seed, **_):
             results = [d for d in all_docs if q_lower in d.get("title", "").lower() or q_lower in d.get("content", "").lower() or q_lower in d.get("tags", "").lower()]
             st.markdown(f"**{len(results)} result(s)** for `{query}`")
             if not results:
-                st.markdown('<div style="padding:24px;text-align:center;color:#475569;">No documents matched your search.</div>', unsafe_allow_html=True)
+                st.markdown('<div style="padding:24px;text-align:center;color:var(--text-5);">No documents matched your search.</div>', unsafe_allow_html=True)
             for doc in results:
                 cat = doc.get("category", "General")
-                cat_color = CATEGORY_COLORS.get(cat, "#475569")
+                cat_color = CATEGORY_COLORS.get(cat, "var(--text-5)")
                 with st.expander(f"{doc.get('title', 'Untitled')} — {cat}", expanded=True):
                     st.markdown(f'<span style="{BADGE_CSS}background:rgba(0,0,0,0.3);color:{cat_color};border:1px solid {cat_color}44;">{cat}</span>', unsafe_allow_html=True)
                     st.markdown(doc.get("content", ""))
         else:
-            st.markdown('<div style="padding:24px;text-align:center;color:#475569;">Enter a search term above to find documents.</div>', unsafe_allow_html=True)
+            st.markdown('<div style="padding:24px;text-align:center;color:var(--text-5);">Enter a search term above to find documents.</div>', unsafe_allow_html=True)
 
 
 def view_ops_reporting(*, client, snapshots, alerts, backups, seed, role, **_):
@@ -2648,7 +2648,7 @@ def view_ops_reporting(*, client, snapshots, alerts, backups, seed, role, **_):
                     else:
                         csv_data = pd.DataFrame([{"Server": s["name"], "CPU %": s.get("cpu_pct"), "Mem %": s.get("memory_pct"), "Disk %": s.get("disk_pct")} for s in _snaps]).to_csv(index=False)
                     st.download_button("Download CSV", data=csv_data, file_name=f"{title.lower().replace(' ', '_')}.csv", mime="text/csv", key=f"rpt_{title[:8]}")
-                st.markdown('<hr style="border-color:#1e293b;margin:8px 0;">', unsafe_allow_html=True)
+                st.markdown('<hr style="border-color:var(--border-color);margin:8px 0;">', unsafe_allow_html=True)
 
     with tabs[2]:
         st.markdown("#### Key Metric Trends vs Previous Period")
@@ -2663,8 +2663,8 @@ def view_ops_reporting(*, client, snapshots, alerts, backups, seed, role, **_):
             ("Open Incidents",        str(active_incidents), rng.choice(["↓", "→", "↑"]), "#ef4444" if active_incidents > 3 else "#22c55e"),
         ]
         for metric, value, arrow, color in TRENDS:
-            arrow_color = "#22c55e" if arrow == "↑" else ("#ef4444" if arrow == "↓" else "#475569")
-            st.markdown(f'<div style="display:flex;align-items:center;justify-content:space-between;background:rgba(15,23,42,0.7);border:1px solid #1e293b;border-radius:8px;padding:12px 18px;margin-bottom:6px;"><span style="color:#cbd5e1;font-weight:600;">{metric}</span><span style="color:{color};font-weight:700;">{value}</span><span style="color:{arrow_color};font-size:1.2rem;font-weight:800;">{arrow}</span></div>', unsafe_allow_html=True)
+            arrow_color = "#22c55e" if arrow == "↑" else ("#ef4444" if arrow == "↓" else "var(--text-5)")
+            st.markdown(f'<div style="display:flex;align-items:center;justify-content:space-between;background:rgba(var(--bg-overlay-rgb),0.7);border:1px solid var(--border-color);border-radius:8px;padding:12px 18px;margin-bottom:6px;"><span style="color:var(--text-2);font-weight:600;">{metric}</span><span style="color:{color};font-weight:700;">{value}</span><span style="color:{arrow_color};font-size:1.2rem;font-weight:800;">{arrow}</span></div>', unsafe_allow_html=True)
 
     with tabs[3]:
         st.markdown("#### Export Operational Data")
@@ -2742,7 +2742,7 @@ def _dm_msg_display(current_role: str):
     if not sel:
         st.markdown(
             '<div style="display:flex;align-items:center;justify-content:center;'
-            'height:420px;color:#334155;font-size:0.88rem;">'
+            'height:420px;color:var(--text-6);font-size:0.88rem;">'
             'Select a conversation on the left or start a new one.</div>',
             unsafe_allow_html=True,
         )
@@ -2758,42 +2758,42 @@ def _dm_msg_display(current_role: str):
         st.session_state[msgs_key] = fresh
     msgs = st.session_state[msgs_key]
 
-    rc = _ROLE_COLOR.get(sel, "#94a3b8")
+    rc = _ROLE_COLOR.get(sel, "var(--text-3)")
     hc1, hc2 = st.columns([5, 1])
     with hc1:
         st.markdown(
-            f'<div style="font-size:1.05rem;font-weight:700;color:#e2e8f0;">'
+            f'<div style="font-size:1.05rem;font-weight:700;color:var(--text-2);">'
             f'<span style="color:{rc};">●</span>&nbsp;{sel}</div>'
-            f'<div style="font-size:0.78rem;color:#64748b;margin-top:2px;">'
+            f'<div style="font-size:0.78rem;color:var(--text-4);margin-top:2px;">'
             f'{len(msgs)} message{"s" if len(msgs) != 1 else ""}</div>',
             unsafe_allow_html=True,
         )
     with hc2:
         _tick = st.session_state.get(f"dm_tick_{current_role}_{sel}", "—")
         st.markdown(
-            f'<div style="text-align:right;font-size:0.72rem;color:#475569;padding-top:8px;">'
-            f'{_svg(_SVG_CHAT, 13, "#475569")}'
+            f'<div style="text-align:right;font-size:0.72rem;color:var(--text-5);padding-top:8px;">'
+            f'{_svg(_SVG_CHAT, 13, "var(--text-5)")}'
             f'&nbsp;<span style="color:#22c55e;font-size:0.65rem;" title="last synced">● {_tick}</span></div>',
             unsafe_allow_html=True,
         )
-    st.markdown('<hr style="border-color:#1e293b;margin:6px 0 10px;">', unsafe_allow_html=True)
+    st.markdown('<hr style="border-color:var(--border-color);margin:6px 0 10px;">', unsafe_allow_html=True)
 
     bubbles_html = ""
     if not msgs:
         bubbles_html = (
             '<div style="display:flex;align-items:center;justify-content:center;'
-            'height:220px;color:#334155;font-size:0.87rem;">'
+            'height:220px;color:var(--text-6);font-size:0.87rem;">'
             'No messages yet — say hello below.</div>'
         )
     for m in msgs[-60:]:
         is_mine  = m["from"] == current_role
-        mrc      = _ROLE_COLOR.get(m["from"], "#94a3b8")
+        mrc      = _ROLE_COLOR.get(m["from"], "var(--text-3)")
         initials = _role_avatar(m["from"])
         flex_dir = "row-reverse" if is_mine else "row"
         align    = "flex-end"    if is_mine else "flex-start"
         br       = "12px 4px 12px 12px" if is_mine else "4px 12px 12px 12px"
-        bg       = "rgba(34,211,238,0.07)" if is_mine else "rgba(15,23,42,0.9)"
-        bd       = "1px solid rgba(34,211,238,0.18)" if is_mine else "1px solid #1e293b"
+        bg       = "rgba(34,211,238,0.07)" if is_mine else "rgba(var(--bg-overlay-rgb),0.9)"
+        bd       = "1px solid rgba(34,211,238,0.18)" if is_mine else "1px solid var(--border-color)"
         ts       = m.get("ts", "")
         now_date = datetime.now().strftime("%Y-%m-%d")
         time_str = ts[11:16] if len(ts) >= 16 else ""
@@ -2809,16 +2809,16 @@ def _dm_msg_display(current_role: str):
             f'<div style="flex:1;min-width:0;">'
             f'<div style="font-size:0.7rem;font-weight:700;color:{mrc};'
             f'margin-bottom:3px;text-align:{ta};">'
-            f'{m["from"]} <span style="color:#475569;font-weight:400;font-size:0.67rem;">'
+            f'{m["from"]} <span style="color:var(--text-5);font-weight:400;font-size:0.67rem;">'
             f'{time_display}</span></div>'
             f'<div style="background:{bg};border:{bd};border-radius:{br};padding:8px 12px;">'
-            f'<div style="color:#cbd5e1;font-size:0.84rem;line-height:1.55;word-break:break-word;">'
+            f'<div style="color:var(--text-2);font-size:0.84rem;line-height:1.55;word-break:break-word;">'
             f'{m.get("text", "")}</div></div></div></div>'
         )
     st.markdown(
         f'<div style="height:360px;overflow-y:auto;display:flex;flex-direction:column;'
-        f'padding:14px;background:linear-gradient(180deg,#06090f 0%,#080d1a 100%);'
-        f'border:1px solid #1e293b;border-radius:10px;">'
+        f'padding:14px;background:linear-gradient(180deg,var(--bg-inset) 0%,var(--bg-surface-2) 100%);'
+        f'border:1px solid var(--border-color);border-radius:10px;">'
         f'{bubbles_html}</div>',
         unsafe_allow_html=True,
     )
@@ -2875,7 +2875,7 @@ def render_direct_messages(current_role: str):
     with col_list:
         st.markdown(
             '<div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;'
-            'letter-spacing:0.1em;color:#475569;margin-bottom:10px;">Direct Messages</div>',
+            'letter-spacing:0.1em;color:var(--text-5);margin-bottom:10px;">Direct Messages</div>',
             unsafe_allow_html=True,
         )
         other_roles = [r for r in ALL_ROLES if r != current_role]
@@ -2887,12 +2887,12 @@ def render_direct_messages(current_role: str):
             if new_target != "— select —":
                 st.session_state.dm_selected = new_target
                 st.rerun()
-        st.markdown('<hr style="border-color:#1e293b;margin:8px 0;">', unsafe_allow_html=True)
+        st.markdown('<hr style="border-color:var(--border-color);margin:8px 0;">', unsafe_allow_html=True)
 
         inbox = store.get_inbox(current_role)
         if not inbox:
             st.markdown(
-                '<div style="color:#334155;font-size:0.78rem;padding:8px 0;">No conversations yet.</div>',
+                '<div style="color:var(--text-6);font-size:0.78rem;padding:8px 0;">No conversations yet.</div>',
                 unsafe_allow_html=True,
             )
         for thread in inbox:
@@ -2913,7 +2913,7 @@ def render_direct_messages(current_role: str):
                 st.rerun()
             if preview:
                 st.markdown(
-                    f'<div style="font-size:0.66rem;color:#475569;margin:-4px 0 6px 2px;'
+                    f'<div style="font-size:0.66rem;color:var(--text-5);margin:-4px 0 6px 2px;'
                     f'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">{preview}</div>',
                     unsafe_allow_html=True,
                 )
