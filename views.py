@@ -402,9 +402,16 @@ def _do_forward(m: dict, target: str, current_role: str, source_label: str) -> N
         st.session_state.pop(f"dm_sig_{current_role}_{role}", None)
 
 
-def _message_action_menu(m: dict, current_role: str, source_label: str, prefix: str, on_delete) -> None:
-    """Per-message ⋮ menu — forward this message to another channel/DM, or delete it."""
+def _message_action_menu(m: dict, current_role: str, source_label: str, prefix: str, on_delete, reply_key: str) -> None:
+    """Per-message ⋮ menu — reply to, forward, or delete this message."""
     with st.popover(" ", icon=":material/more_vert:"):
+        if st.button("Reply", key=f"{prefix}_reply_btn_{m['id']}", icon=":material/reply:", width="stretch"):
+            preview = (m.get("text") or "").strip().replace("\n", " ")
+            if len(preview) > 80:
+                preview = preview[:80] + "…"
+            st.session_state[reply_key] = {"id": m["id"], "from": m["from"], "preview": preview}
+            st.rerun()
+        st.divider()
         st.caption("Forward to")
         target = st.selectbox(
             "Forward target", _forward_targets(current_role),
@@ -603,7 +610,7 @@ def _channel_msg_display(current_role: str):
             with row_body:
                 st.markdown(bubble_html, unsafe_allow_html=True)
             with row_menu:
-                _message_action_menu(m, current_role, sel_ch["name"], "ch", _delete_ch)
+                _message_action_menu(m, current_role, sel_ch["name"], "ch", _delete_ch, f"ch_reply_{sel_id}")
 
             prev_from, prev_dt = m["from"], cur_dt
 
@@ -636,6 +643,26 @@ def _channel_compose(current_role: str):
     """Stable compose form — lives OUTSIDE the polling fragment so it never blinks."""
     sel_id = st.session_state.get("ch_selected", store.CHANNELS[0]["id"])
     sel_ch = next((c for c in store.CHANNELS if c["id"] == sel_id), store.CHANNELS[0])
+
+    reply_key = f"ch_reply_{sel_id}"
+    reply_to = st.session_state.get(reply_key)
+    if reply_to:
+        rb1, rb2 = st.columns([11, 1])
+        with rb1:
+            st.markdown(
+                f'<div style="background:rgba(34,211,238,0.07);border:1px solid rgba(34,211,238,0.18);'
+                f'border-left:3px solid #22d3ee;border-radius:6px;padding:6px 12px;'
+                f'font-size:0.78rem;color:var(--text-4);margin-bottom:6px;">'
+                f'↩ Replying to <b style="color:var(--text-2);">{reply_to["from"]}</b>'
+                f'&nbsp;&middot;&nbsp;<span style="color:var(--text-5);">{reply_to["preview"]}</span></div>',
+                unsafe_allow_html=True,
+            )
+        with rb2:
+            if st.button("", key=f"ch_reply_cancel_{sel_id}", icon=":material/close:",
+                          help="Cancel reply", width="stretch"):
+                st.session_state.pop(reply_key, None)
+                st.rerun()
+
     with st.container(border=True):
         with st.form(f"ch_compose_{sel_id}", clear_on_submit=True):
             msg_text = st.text_area(
@@ -669,6 +696,7 @@ def _channel_compose(current_role: str):
                     store.clear_channel(sel_id)
                     st.session_state.pop(f"ch_msgs_{sel_id}", None)
                     st.session_state.pop(f"ch_sig_{sel_id}", None)
+                    st.session_state.pop(reply_key, None)
                     st.toast(f"Cleared {sel_ch['name']}.", icon=":material/delete_sweep:")
                     st.rerun()
                 elif not (msg_text and msg_text.strip()) and attach_file is None:
@@ -686,14 +714,19 @@ def _channel_compose(current_role: str):
                                 "data_b64": base64.b64encode(raw).decode(),
                                 "size": attach_file.size,
                             }
+                    text = (msg_text or "").strip()
+                    if reply_to:
+                        quote = f'↩ Replying to {reply_to["from"]}: "{reply_to["preview"]}"'
+                        text = f"{quote}\n\n{text}" if text else f"{quote}."
                     store.post_to_channel(
                         current_role, sel_id,
-                        (msg_text or "").strip(),
+                        text,
                         attachment=attachment,
                     )
                     # Invalidate cache so _channel_msg_display fetches fresh on next rerun
                     st.session_state.pop(f"ch_msgs_{sel_id}", None)
                     st.session_state.pop(f"ch_sig_{sel_id}", None)
+                    st.session_state.pop(reply_key, None)
                     st.rerun()
 
 
@@ -2938,7 +2971,7 @@ def _dm_msg_display(current_role: str):
             with row_body:
                 st.markdown(bubble_html, unsafe_allow_html=True)
             with row_menu:
-                _message_action_menu(m, current_role, f"DM with {sel}", "dm", _delete_dm)
+                _message_action_menu(m, current_role, f"DM with {sel}", "dm", _delete_dm, f"dm_reply_{current_role}_{sel}")
 
     selected_ids = [
         m["id"] for m in msgs[-60:]
@@ -2971,6 +3004,26 @@ def _dm_compose(current_role: str):
     sel = st.session_state.get("dm_selected")
     if not sel:
         return
+
+    reply_key = f"dm_reply_{current_role}_{sel}"
+    reply_to = st.session_state.get(reply_key)
+    if reply_to:
+        rb1, rb2 = st.columns([11, 1])
+        with rb1:
+            st.markdown(
+                f'<div style="background:rgba(34,211,238,0.07);border:1px solid rgba(34,211,238,0.18);'
+                f'border-left:3px solid #22d3ee;border-radius:6px;padding:6px 12px;'
+                f'font-size:0.78rem;color:var(--text-4);margin-bottom:6px;">'
+                f'↩ Replying to <b style="color:var(--text-2);">{reply_to["from"]}</b>'
+                f'&nbsp;&middot;&nbsp;<span style="color:var(--text-5);">{reply_to["preview"]}</span></div>',
+                unsafe_allow_html=True,
+            )
+        with rb2:
+            if st.button("", key=f"dm_reply_cancel_{current_role}_{sel}", icon=":material/close:",
+                          help="Cancel reply", width="stretch"):
+                st.session_state.pop(reply_key, None)
+                st.rerun()
+
     with st.container(border=True):
         with st.form(f"dm_form_{current_role}_{sel}", clear_on_submit=True):
             msg_text = st.text_area(
@@ -2985,9 +3038,13 @@ def _dm_compose(current_role: str):
                     "Send", icon=":material/send:", type="primary", width="stretch",
                 ):
                     if msg_text and msg_text.strip():
-                        store.send_message(current_role, sel, msg_text.strip())
+                        text = msg_text.strip()
+                        if reply_to:
+                            text = f'↩ Replying to {reply_to["from"]}: "{reply_to["preview"]}"\n\n{text}'
+                        store.send_message(current_role, sel, text)
                         st.session_state.pop(f"dm_msgs_{current_role}_{sel}", None)
                         st.session_state.pop(f"dm_sig_{current_role}_{sel}", None)
+                        st.session_state.pop(reply_key, None)
                         st.rerun()
 
 
