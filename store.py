@@ -151,6 +151,13 @@ def get_thread(role_a: str, role_b: str) -> list:
         return []
 
 
+def delete_dm_message(msg_id: str) -> None:
+    try:
+        _sb().table("messages").delete().eq("id", msg_id).execute()
+    except Exception as e:
+        st.error(f"Delete failed: {e}")
+
+
 def get_inbox(role: str) -> list:
     try:
         res = (
@@ -257,6 +264,13 @@ def clear_channel(channel_id: str) -> None:
         _sb().table("channel_messages").delete().eq("channel_id", channel_id).execute()
     except Exception as e:
         st.error(f"Clear failed: {e}")
+
+
+def delete_channel_message(msg_id: str) -> None:
+    try:
+        _sb().table("channel_messages").delete().eq("id", msg_id).execute()
+    except Exception as e:
+        st.error(f"Delete failed: {e}")
 
 
 def get_channel_messages(channel_id: str) -> list:

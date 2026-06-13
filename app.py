@@ -221,6 +221,25 @@ div[data-testid="stPopover"] > div > button:hover {
     background: rgba(var(--line-rgb),0.08) !important; border-color: rgba(var(--line-rgb),0.18) !important; color: var(--text-2) !important;
 }
 
+/* ── Popover body (action menus, forward target) ─────────────────── */
+div[data-testid="stPopoverBody"],
+div[data-testid="stPopoverBody"] > div {
+    background: var(--bg-surface) !important;
+    border-radius: 10px !important;
+}
+div[data-testid="stPopoverBody"] {
+    border: 1px solid var(--border-color) !important;
+}
+div[data-testid="stPopoverBody"] p,
+div[data-testid="stPopoverBody"] span,
+div[data-testid="stPopoverBody"] label,
+div[data-testid="stPopoverBody"] div {
+    color: var(--text-2) !important;
+}
+div[data-testid="stPopoverBody"] hr {
+    border-top: 1px solid rgba(var(--line-rgb),0.1) !important;
+}
+
 /* ── Forms ────────────────────────────────────────────────────────── */
 div[data-testid="stForm"] { border: 1px solid rgba(var(--line-rgb),0.07) !important; border-radius: 10px !important; background: var(--bg-surface); }
 
@@ -264,12 +283,20 @@ div[data-testid="stDataFrame"], div[data-testid="stDataFrame"] * {
 [data-testid="stArrowVegaLiteChart"] .role-axis line { stroke: var(--border-color) !important; }
 
 /* ── Inputs & selects ─────────────────────────────────────────────── */
-div[data-baseweb="select"] > div, div[data-baseweb="input"] > div {
+div[data-baseweb="select"] > div, div[data-baseweb="input"] > div,
+div[data-testid="stTextAreaRootElement"], div[data-testid="stTextAreaRootElement"] div[data-baseweb="base-input"] {
     background: var(--bg-inset) !important; border-color: rgba(var(--line-rgb),0.1) !important;
     border-radius: 7px !important; font-family: 'Inter', sans-serif !important;
 }
-div[data-baseweb="select"] > div:focus-within, div[data-baseweb="input"] > div:focus-within {
+div[data-baseweb="select"] > div:focus-within, div[data-baseweb="input"] > div:focus-within,
+div[data-testid="stTextAreaRootElement"]:focus-within {
     border-color: rgba(34,211,238,0.5) !important; box-shadow: 0 0 0 3px rgba(34,211,238,0.1) !important;
+}
+div[data-testid="stTextAreaRootElement"] textarea {
+    color: var(--text-2) !important;
+}
+div[data-testid="stTextAreaRootElement"] textarea::placeholder {
+    color: var(--text-4) !important;
 }
 span[data-baseweb="tag"] { background: rgba(34,211,238,0.13) !important; border: 1px solid rgba(34,211,238,0.3) !important; border-radius: 6px !important; }
 span[data-baseweb="tag"] * { color: var(--accent-cyan-text) !important; fill: var(--accent-cyan-text) !important; }
@@ -453,6 +480,32 @@ div[data-testid="stCode"] pre { background: var(--bg-inset) !important; border: 
 .dc-username { font-size: 0.86rem; font-weight: 700; }
 .dc-time { font-size: 0.66rem; color: var(--text-6); }
 .dc-text { color: var(--text-3); font-size: 0.87rem; line-height: 1.55; word-break: break-word; }
+
+/* ── Chat message feed (Channels / Direct Messages) ──────────────────── */
+div[data-testid="stVerticalBlock"].st-key-ch_feed,
+div[data-testid="stVerticalBlock"].st-key-dm_feed {
+    background: linear-gradient(180deg,var(--bg-inset) 0%,var(--bg-surface-2) 100%) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 10px !important;
+    gap: 2px !important;
+}
+div[data-testid="stVerticalBlock"].st-key-ch_feed div[data-testid="stHorizontalBlock"],
+div[data-testid="stVerticalBlock"].st-key-dm_feed div[data-testid="stHorizontalBlock"] {
+    gap: 0.4rem;
+}
+div[data-testid="stVerticalBlock"].st-key-ch_feed div[data-testid="stCheckbox"],
+div[data-testid="stVerticalBlock"].st-key-dm_feed div[data-testid="stCheckbox"] {
+    margin-top: 14px;
+}
+div[data-testid="stVerticalBlock"].st-key-ch_feed label[data-baseweb="checkbox"]:has(input:not(:checked)) > span,
+div[data-testid="stVerticalBlock"].st-key-dm_feed label[data-baseweb="checkbox"]:has(input:not(:checked)) > span {
+    background: rgba(var(--line-rgb),0.06) !important;
+    border: 1px solid rgba(var(--line-rgb),0.25) !important;
+}
+div[data-testid="stVerticalBlock"].st-key-ch_feed div[data-testid="stPopover"] > div > button,
+div[data-testid="stVerticalBlock"].st-key-dm_feed div[data-testid="stPopover"] > div > button {
+    margin-top: 6px; padding: 4px 8px !important;
+}
 </style>
 """, unsafe_allow_html=True)
 

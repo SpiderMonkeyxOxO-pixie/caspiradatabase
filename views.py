@@ -376,6 +376,92 @@ def _fmt_size(n: int) -> str:
     return f"{n/1024**2:.1f} MB"
 
 
+def _forward_targets(current_role: str) -> list:
+    """Flat list of forward destinations: '#channel' entries first, then '@Role' DMs."""
+    return [c["name"] for c in store.CHANNELS] + [f"@{r}" for r in ALL_ROLES if r != current_role]
+
+
+def _do_forward(m: dict, target: str, current_role: str, source_label: str) -> None:
+    """Forward a message's text (and attachment, for channel targets) to another channel or DM."""
+    prefix = f"↪ Forwarded from {m['from']} ({source_label})"
+    text = (m.get("text") or "").strip()
+    att = m.get("attachment")
+    body = f"{prefix}:\n{text}" if text else f"{prefix}."
+
+    if target.startswith("#"):
+        ch_id = next(c["id"] for c in store.CHANNELS if c["name"] == target)
+        store.post_to_channel(current_role, ch_id, body, attachment=att)
+        st.session_state.pop(f"ch_msgs_{ch_id}", None)
+        st.session_state.pop(f"ch_sig_{ch_id}", None)
+    else:
+        role = target[1:]
+        if att:
+            body += f"\n\U0001f4ce {att['name']} ({_fmt_size(att.get('size', 0))}) — attachment not available in direct messages"
+        store.send_message(current_role, role, body)
+        st.session_state.pop(f"dm_msgs_{current_role}_{role}", None)
+        st.session_state.pop(f"dm_sig_{current_role}_{role}", None)
+
+
+def _message_action_menu(m: dict, current_role: str, source_label: str, prefix: str, on_delete) -> None:
+    """Per-message ⋮ menu — forward this message to another channel/DM, or delete it."""
+    with st.popover(" ", icon=":material/more_vert:"):
+        st.caption("Forward to")
+        target = st.selectbox(
+            "Forward target", _forward_targets(current_role),
+            key=f"{prefix}_fwd_target_{m['id']}", label_visibility="collapsed",
+        )
+        if st.button("Forward", key=f"{prefix}_fwd_btn_{m['id']}", icon=":material/forward:", width="stretch"):
+            _do_forward(m, target, current_role, source_label)
+            st.toast(f"Forwarded to {target}", icon=":material/forward:")
+            st.rerun()
+        st.divider()
+        if st.button("Delete message", key=f"{prefix}_del_btn_{m['id']}", icon=":material/delete:", width="stretch"):
+            on_delete(m["id"])
+            st.toast("Message deleted", icon=":material/delete:")
+            st.rerun()
+
+
+def _bulk_action_bar(selected_ids: list, msgs: list, current_role: str, source_label: str,
+                      prefix: str, gen_key: str, on_delete) -> None:
+    """Action bar shown above the compose box once 1+ messages are selected."""
+    if not selected_ids:
+        return
+    with st.container(border=True):
+        bc1, bc2, bc3, bc4 = st.columns([3, 3, 2, 1.4])
+        with bc1:
+            count = len(selected_ids)
+            st.markdown(
+                f'<div style="padding-top:8px;color:var(--text-3);font-size:0.85rem;">'
+                f'<b>{count}</b> message{"s" if count != 1 else ""} selected</div>',
+                unsafe_allow_html=True,
+            )
+        with bc2:
+            with st.popover("Forward selected", icon=":material/forward:", width="stretch"):
+                target = st.selectbox(
+                    "Forward target", _forward_targets(current_role),
+                    key=f"{prefix}_bulk_fwd_target", label_visibility="collapsed",
+                )
+                if st.button("Forward", key=f"{prefix}_bulk_fwd_btn", type="primary", width="stretch"):
+                    for mid in selected_ids:
+                        msg = next((mm for mm in msgs if mm["id"] == mid), None)
+                        if msg:
+                            _do_forward(msg, target, current_role, source_label)
+                    st.session_state[gen_key] = st.session_state.get(gen_key, 0) + 1
+                    st.toast(f"Forwarded {count} message{'s' if count != 1 else ''} to {target}", icon=":material/forward:")
+                    st.rerun()
+        with bc3:
+            if st.button("Delete selected", key=f"{prefix}_bulk_del", icon=":material/delete:", width="stretch"):
+                for mid in selected_ids:
+                    on_delete(mid)
+                st.session_state[gen_key] = st.session_state.get(gen_key, 0) + 1
+                st.toast(f"Deleted {count} message{'s' if count != 1 else ''}", icon=":material/delete:")
+                st.rerun()
+        with bc4:
+            if st.button("Clear", key=f"{prefix}_bulk_clear", width="stretch"):
+                st.session_state[gen_key] = st.session_state.get(gen_key, 0) + 1
+                st.rerun()
+
+
 def _channel_msg_display(current_role: str):
     """Non-fragment display: reads messages from session_state, renders header + bubbles.
     Only called during full app reruns so images never blink from polling."""
@@ -419,95 +505,115 @@ def _channel_msg_display(current_role: str):
         )
     st.markdown('<hr style="border-color:var(--border-color);margin:6px 0 10px;">', unsafe_allow_html=True)
 
-    bubbles_html = ""
-    if not msgs:
-        empty_icon = _svg(_CH_SVG.get(sel_id, ""), 40, "var(--border-color)")
-        bubbles_html = (
-            f'<div style="display:flex;flex-direction:column;align-items:center;'
-            f'justify-content:center;height:100%;padding:52px 0;">'
-            f'<div style="margin-bottom:14px;">{empty_icon}</div>'
-            f'<div style="color:var(--text-6);font-size:0.9rem;font-weight:600;">No messages yet</div>'
-            f'<div style="color:var(--border-color);font-size:0.78rem;margin-top:4px;">'
-            f'Be the first to post in {sel_ch["name"]}.</div></div>'
-        )
+    def _delete_ch(msg_id: str) -> None:
+        store.delete_channel_message(msg_id)
+        st.session_state.pop(f"ch_msgs_{sel_id}", None)
+        st.session_state.pop(f"ch_sig_{sel_id}", None)
 
-    prev_from, prev_dt = None, None
-    for m in msgs[-100:]:
-        rc       = _ROLE_COLOR.get(m["from"], "var(--text-3)")
-        initials = _role_avatar(m["from"])
+    sel_gen = st.session_state.get(f"ch_sel_gen_{sel_id}", 0)
 
-        ts = m.get("ts", "")
-        now_date     = datetime.now().strftime("%Y-%m-%d")
-        time_str     = ts[11:16] if len(ts) >= 16 else ""
-        date_str     = ts[:10]   if len(ts) >= 10 else ""
-        time_display = time_str  if date_str == now_date else f"{date_str} {time_str}"
+    with st.container(height=560, border=True, key="ch_feed"):
+        if not msgs:
+            empty_icon = _svg(_CH_SVG.get(sel_id, ""), 40, "var(--border-color)")
+            st.markdown(
+                f'<div style="display:flex;flex-direction:column;align-items:center;'
+                f'justify-content:center;height:100%;padding:52px 0;">'
+                f'<div style="margin-bottom:14px;">{empty_icon}</div>'
+                f'<div style="color:var(--text-6);font-size:0.9rem;font-weight:600;">No messages yet</div>'
+                f'<div style="color:var(--border-color);font-size:0.78rem;margin-top:4px;">'
+                f'Be the first to post in {sel_ch["name"]}.</div></div>',
+                unsafe_allow_html=True,
+            )
 
-        att_html = ""
-        att = m.get("attachment")
-        if att:
-            if att.get("mime", "") in _IMAGE_MIMES:
-                img_label_svg = _svg(_SVG_IMG, 11, "var(--text-5)", "margin-right:3px;")
-                att_html = (
-                    f'<div style="margin-top:7px;">'
-                    f'<img src="data:{att["mime"]};base64,{att["data_b64"]}" '
-                    f'style="max-width:260px;max-height:260px;border-radius:8px;'
-                    f'display:block;border:1px solid rgba(var(--line-rgb),0.08);" />'
-                    f'<div style="font-size:0.67rem;color:var(--text-5);margin-top:3px;">'
-                    f'{img_label_svg}{att["name"]} &middot; {_fmt_size(att.get("size", 0))}'
-                    f'</div></div>'
+        prev_from, prev_dt = None, None
+        for m in msgs[-100:]:
+            rc       = _ROLE_COLOR.get(m["from"], "var(--text-3)")
+            initials = _role_avatar(m["from"])
+
+            ts = m.get("ts", "")
+            now_date     = datetime.now().strftime("%Y-%m-%d")
+            time_str     = ts[11:16] if len(ts) >= 16 else ""
+            date_str     = ts[:10]   if len(ts) >= 10 else ""
+            time_display = time_str  if date_str == now_date else f"{date_str} {time_str}"
+
+            att_html = ""
+            att = m.get("attachment")
+            if att:
+                if att.get("mime", "") in _IMAGE_MIMES:
+                    img_label_svg = _svg(_SVG_IMG, 11, "var(--text-5)", "margin-right:3px;")
+                    att_html = (
+                        f'<div style="margin-top:7px;">'
+                        f'<img src="data:{att["mime"]};base64,{att["data_b64"]}" '
+                        f'style="max-width:260px;max-height:260px;border-radius:8px;'
+                        f'display:block;border:1px solid rgba(var(--line-rgb),0.08);" />'
+                        f'<div style="font-size:0.67rem;color:var(--text-5);margin-top:3px;">'
+                        f'{img_label_svg}{att["name"]} &middot; {_fmt_size(att.get("size", 0))}'
+                        f'</div></div>'
+                    )
+                else:
+                    file_svg = _svg(_SVG_CLIP, 20, "var(--text-4)")
+                    att_html = (
+                        f'<div style="margin-top:7px;background:rgba(var(--line-rgb),0.04);'
+                        f'border:1px solid rgba(var(--line-rgb),0.09);border-radius:8px;'
+                        f'padding:9px 13px;display:inline-flex;align-items:center;gap:10px;">'
+                        f'{file_svg}'
+                        f'<div>'
+                        f'<div style="font-size:0.82rem;color:var(--text-2);font-weight:600;">{att["name"]}</div>'
+                        f'<div style="font-size:0.69rem;color:var(--text-4);">{_fmt_size(att.get("size", 0))}</div>'
+                        f'</div></div>'
+                    )
+
+            text_html = f'<div class="dc-text">{m["text"]}</div>' if m.get("text") else ""
+
+            cur_dt = None
+            try:
+                cur_dt = datetime.fromisoformat(ts)
+            except (ValueError, TypeError):
+                pass
+
+            is_grouped = (
+                prev_from == m["from"] and prev_dt is not None and cur_dt is not None
+                and (cur_dt - prev_dt).total_seconds() < 420
+            )
+
+            if is_grouped:
+                bubble_html = (
+                    f'<div class="dc-row">'
+                    f'<div class="dc-avatar-spacer"><span class="dc-hover-ts">{time_display}</span></div>'
+                    f'<div class="dc-body">{text_html}{att_html}</div>'
+                    f'</div>'
                 )
             else:
-                file_svg = _svg(_SVG_CLIP, 20, "var(--text-4)")
-                att_html = (
-                    f'<div style="margin-top:7px;background:rgba(var(--line-rgb),0.04);'
-                    f'border:1px solid rgba(var(--line-rgb),0.09);border-radius:8px;'
-                    f'padding:9px 13px;display:inline-flex;align-items:center;gap:10px;">'
-                    f'{file_svg}'
-                    f'<div>'
-                    f'<div style="font-size:0.82rem;color:var(--text-2);font-weight:600;">{att["name"]}</div>'
-                    f'<div style="font-size:0.69rem;color:var(--text-4);">{_fmt_size(att.get("size", 0))}</div>'
+                bubble_html = (
+                    f'<div class="dc-row dc-first">'
+                    f'<div class="dc-avatar" style="background:{rc}1a;border:2px solid {rc};color:{rc};">{initials}</div>'
+                    f'<div class="dc-body">'
+                    f'<div class="dc-header"><span class="dc-username" style="color:{rc};">{m["from"]}</span>'
+                    f'<span class="dc-time">{time_display}</span></div>'
+                    f'{text_html}{att_html}'
                     f'</div></div>'
                 )
 
-        text_html = f'<div class="dc-text">{m["text"]}</div>' if m.get("text") else ""
+            row_chk, row_body, row_menu = st.columns([0.6, 11, 0.7], gap="small")
+            with row_chk:
+                st.checkbox(
+                    "Select", key=f"ch_sel_{sel_gen}_{sel_id}_{m['id']}",
+                    label_visibility="collapsed",
+                )
+            with row_body:
+                st.markdown(bubble_html, unsafe_allow_html=True)
+            with row_menu:
+                _message_action_menu(m, current_role, sel_ch["name"], "ch", _delete_ch)
 
-        cur_dt = None
-        try:
-            cur_dt = datetime.fromisoformat(ts)
-        except (ValueError, TypeError):
-            pass
+            prev_from, prev_dt = m["from"], cur_dt
 
-        is_grouped = (
-            prev_from == m["from"] and prev_dt is not None and cur_dt is not None
-            and (cur_dt - prev_dt).total_seconds() < 420
-        )
-
-        if is_grouped:
-            bubbles_html += (
-                f'<div class="dc-row">'
-                f'<div class="dc-avatar-spacer"><span class="dc-hover-ts">{time_display}</span></div>'
-                f'<div class="dc-body">{text_html}{att_html}</div>'
-                f'</div>'
-            )
-        else:
-            bubbles_html += (
-                f'<div class="dc-row dc-first">'
-                f'<div class="dc-avatar" style="background:{rc}1a;border:2px solid {rc};color:{rc};">{initials}</div>'
-                f'<div class="dc-body">'
-                f'<div class="dc-header"><span class="dc-username" style="color:{rc};">{m["from"]}</span>'
-                f'<span class="dc-time">{time_display}</span></div>'
-                f'{text_html}{att_html}'
-                f'</div></div>'
-            )
-
-        prev_from, prev_dt = m["from"], cur_dt
-
-    st.markdown(
-        f'<div class="dc-feed" style="height:640px;overflow-y:auto;'
-        f'background:linear-gradient(180deg,var(--bg-inset) 0%,var(--bg-surface-2) 100%);'
-        f'border:1px solid var(--border-color);border-radius:10px;">'
-        f'{bubbles_html}</div>',
-        unsafe_allow_html=True,
+    selected_ids = [
+        m["id"] for m in msgs[-100:]
+        if st.session_state.get(f"ch_sel_{sel_gen}_{sel_id}_{m['id']}")
+    ]
+    _bulk_action_bar(
+        selected_ids, msgs, current_role, sel_ch["name"], "ch",
+        f"ch_sel_gen_{sel_id}", _delete_ch,
     )
 
 
@@ -2778,49 +2884,69 @@ def _dm_msg_display(current_role: str):
         )
     st.markdown('<hr style="border-color:var(--border-color);margin:6px 0 10px;">', unsafe_allow_html=True)
 
-    bubbles_html = ""
-    if not msgs:
-        bubbles_html = (
-            '<div style="display:flex;align-items:center;justify-content:center;'
-            'height:220px;color:var(--text-6);font-size:0.87rem;">'
-            'No messages yet — say hello below.</div>'
-        )
-    for m in msgs[-60:]:
-        is_mine  = m["from"] == current_role
-        mrc      = _ROLE_COLOR.get(m["from"], "var(--text-3)")
-        initials = _role_avatar(m["from"])
-        flex_dir = "row-reverse" if is_mine else "row"
-        align    = "flex-end"    if is_mine else "flex-start"
-        br       = "12px 4px 12px 12px" if is_mine else "4px 12px 12px 12px"
-        bg       = "rgba(34,211,238,0.07)" if is_mine else "rgba(var(--bg-overlay-rgb),0.9)"
-        bd       = "1px solid rgba(34,211,238,0.18)" if is_mine else "1px solid var(--border-color)"
-        ts       = m.get("ts", "")
-        now_date = datetime.now().strftime("%Y-%m-%d")
-        time_str = ts[11:16] if len(ts) >= 16 else ""
-        date_str = ts[:10]   if len(ts) >= 10 else ""
-        time_display = time_str if date_str == now_date else f"{date_str} {time_str}"
-        ta = "right" if is_mine else "left"
-        bubbles_html += (
-            f'<div style="display:flex;flex-direction:{flex_dir};align-items:flex-start;'
-            f'gap:8px;margin-bottom:12px;max-width:82%;">'
-            f'<div style="flex-shrink:0;width:32px;height:32px;border-radius:50%;'
-            f'background:{mrc}1a;border:2px solid {mrc};display:flex;align-items:center;'
-            f'justify-content:center;font-size:0.58rem;font-weight:800;color:{mrc};">{initials}</div>'
-            f'<div style="flex:1;min-width:0;">'
-            f'<div style="font-size:0.7rem;font-weight:700;color:{mrc};'
-            f'margin-bottom:3px;text-align:{ta};">'
-            f'{m["from"]} <span style="color:var(--text-5);font-weight:400;font-size:0.67rem;">'
-            f'{time_display}</span></div>'
-            f'<div style="background:{bg};border:{bd};border-radius:{br};padding:8px 12px;">'
-            f'<div style="color:var(--text-2);font-size:0.84rem;line-height:1.55;word-break:break-word;">'
-            f'{m.get("text", "")}</div></div></div></div>'
-        )
-    st.markdown(
-        f'<div style="height:360px;overflow-y:auto;display:flex;flex-direction:column;'
-        f'padding:14px;background:linear-gradient(180deg,var(--bg-inset) 0%,var(--bg-surface-2) 100%);'
-        f'border:1px solid var(--border-color);border-radius:10px;">'
-        f'{bubbles_html}</div>',
-        unsafe_allow_html=True,
+    def _delete_dm(msg_id: str) -> None:
+        store.delete_dm_message(msg_id)
+        st.session_state.pop(msgs_key, None)
+        st.session_state.pop(f"dm_sig_{current_role}_{sel}", None)
+
+    sel_gen = st.session_state.get(f"dm_sel_gen_{current_role}_{sel}", 0)
+
+    with st.container(height=360, border=True, key="dm_feed"):
+        if not msgs:
+            st.markdown(
+                '<div style="display:flex;align-items:center;justify-content:center;'
+                'height:220px;color:var(--text-6);font-size:0.87rem;">'
+                'No messages yet — say hello below.</div>',
+                unsafe_allow_html=True,
+            )
+        for m in msgs[-60:]:
+            is_mine  = m["from"] == current_role
+            mrc      = _ROLE_COLOR.get(m["from"], "var(--text-3)")
+            initials = _role_avatar(m["from"])
+            flex_dir = "row-reverse" if is_mine else "row"
+            br       = "12px 4px 12px 12px" if is_mine else "4px 12px 12px 12px"
+            bg       = "rgba(34,211,238,0.07)" if is_mine else "rgba(var(--bg-overlay-rgb),0.9)"
+            bd       = "1px solid rgba(34,211,238,0.18)" if is_mine else "1px solid var(--border-color)"
+            ts       = m.get("ts", "")
+            now_date = datetime.now().strftime("%Y-%m-%d")
+            time_str = ts[11:16] if len(ts) >= 16 else ""
+            date_str = ts[:10]   if len(ts) >= 10 else ""
+            time_display = time_str if date_str == now_date else f"{date_str} {time_str}"
+            ta = "right" if is_mine else "left"
+            bubble_html = (
+                f'<div style="display:flex;flex-direction:{flex_dir};align-items:flex-start;'
+                f'gap:8px;max-width:100%;">'
+                f'<div style="flex-shrink:0;width:32px;height:32px;border-radius:50%;'
+                f'background:{mrc}1a;border:2px solid {mrc};display:flex;align-items:center;'
+                f'justify-content:center;font-size:0.58rem;font-weight:800;color:{mrc};">{initials}</div>'
+                f'<div style="flex:1;min-width:0;">'
+                f'<div style="font-size:0.7rem;font-weight:700;color:{mrc};'
+                f'margin-bottom:3px;text-align:{ta};">'
+                f'{m["from"]} <span style="color:var(--text-5);font-weight:400;font-size:0.67rem;">'
+                f'{time_display}</span></div>'
+                f'<div style="background:{bg};border:{bd};border-radius:{br};padding:8px 12px;">'
+                f'<div style="color:var(--text-2);font-size:0.84rem;line-height:1.55;word-break:break-word;">'
+                f'{m.get("text", "")}</div></div></div></div>'
+            )
+
+            row_chk, row_body, row_menu = st.columns([0.6, 11, 0.7], gap="small")
+            with row_chk:
+                st.checkbox(
+                    "Select", key=f"dm_sel_{sel_gen}_{current_role}_{sel}_{m['id']}",
+                    label_visibility="collapsed",
+                )
+            with row_body:
+                st.markdown(bubble_html, unsafe_allow_html=True)
+            with row_menu:
+                _message_action_menu(m, current_role, f"DM with {sel}", "dm", _delete_dm)
+
+    selected_ids = [
+        m["id"] for m in msgs[-60:]
+        if st.session_state.get(f"dm_sel_{sel_gen}_{current_role}_{sel}_{m['id']}")
+    ]
+    _bulk_action_bar(
+        selected_ids, msgs, current_role, f"DM with {sel}", "dm",
+        f"dm_sel_gen_{current_role}_{sel}", _delete_dm,
     )
 
 
