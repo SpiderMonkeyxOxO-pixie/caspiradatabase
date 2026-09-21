@@ -133,20 +133,27 @@ def _make_identity(client: dict, person: str) -> dict:
     }
 
 
-def _new_customer() -> dict:
-    client = random.choice(_customer_clients())
+def client_by_code(code) -> dict:
+    return next((c for c in tm.CLIENTS if c["code"] == code), None)
+
+
+def _new_customer(client: dict = None) -> dict:
+    client = client or random.choice(_customer_clients())
     return _make_identity(client, random.choice(_names_for(client)))
 
 
-def _customer_identity(history: list) -> dict:
-    """Identity of the customer who spoke last in `history`, else a new one."""
+def _customer_identity(history: list, prefer: dict = None) -> dict:
+    """The customer who spoke last in `history` (from client `prefer` if given), else a new one
+    (from `prefer` if given, otherwise any client)."""
     for h in reversed(history):
         label = h.get("from", "")
         for client in _customer_clients():
+            if prefer and client["code"] != prefer["code"]:
+                continue
             prefix = f"{_client_short(client)} Customer "
             if label.startswith(prefix) and len(label) > len(prefix):
                 return _make_identity(client, label[len(prefix):])
-    return _new_customer()
+    return _new_customer(prefer)
 
 
 # ── configuration (resolved on the main thread, passed into the worker) ──────
@@ -198,9 +205,20 @@ def _customer_prompt(sender: str, where: str, ident: dict) -> str:
         "request (e.g. why the system was slow this morning, when the last backup ran, whether data can be "
         "restored, when maintenance happens, how an invoice or SLA works, how to add a new database, who to "
         "call in an emergency). Sometimes report a problem or sound worried or impatient.\n"
-        "- React to what the team member just said (thank them, doubt them, or ask a follow-up) before or "
-        "while asking the next thing. If they greet you, introduce your concern with a question.\n"
-        "- Do not repeat questions already asked in the conversation; move on to new topics. You are not a "
+        "- Keep the conversation going like a real customer relationship. Read the conversation so far and "
+        "make the natural next move:\n"
+        "    • no conversation yet, or they greet you: raise your specific concern.\n"
+        "    • they answered but it is not fully resolved or you are unsure: press with a follow-up — ask for "
+        "evidence, the cause, an ETA, or what exactly they did.\n"
+        "    • they say it is fixed: check it (\"is it stable now?\", \"what stops it happening again?\") and ask "
+        "them to keep monitoring and update you, or ask for the incident report / a status update.\n"
+        "    • sometimes ask them to REVISE something they sent (a report, timeline, quote, wording or SLA "
+        "figure) and say what to change.\n"
+        "    • once an issue has settled (usually after 2–3 exchanges on it), sometimes raise future "
+        "collaboration: adding servers or new services, a disaster-recovery plan, a better SLA, contract "
+        "renewal, pricing, a review meeting.\n"
+        "  Always react to what the team member just said first (thank them, doubt them, or ask more).\n"
+        "- Do not repeat what was already asked or agreed; move the conversation forward. You are not a "
         "technical expert and don't know Caspira's internal details.\n"
         "- Never say you are an AI, a model or a simulation.\n"
         "- Output only the message text — no name prefix."
@@ -334,12 +352,14 @@ def _generate(persona: str, messages: list, key: str, models: list):
 
 # ── public entry point ───────────────────────────────────────────────────────
 
-def schedule_reply(kind: str, target: str, sender: str, text: str, history: list) -> None:
+def schedule_reply(kind: str, target: str, sender: str, text: str, history: list, prefer_client: str = None) -> None:
     """Have an AI teammate answer `text` ~10 seconds from now, without blocking the UI.
 
     kind    "channel" (target = channel id) or "dm" (target = the partner role, who replies)
     sender  the role that just sent the message
     history messages before this one (dicts with "from" and "text"), oldest first
+    prefer_client  client code (e.g. "autofix") whose customer should answer in a channel; None = continue
+                   with whoever spoke last
     Silently does nothing if no API key is configured or every model fails.
     """
     key = (_secret("OPENROUTER_API_KEY") or "").strip()
@@ -353,7 +373,7 @@ def schedule_reply(kind: str, target: str, sender: str, text: str, history: list
         if persona == sender:
             return
     else:
-        ident = _customer_identity(history)          # same customer who asked the question
+        ident = _customer_identity(history, client_by_code(prefer_client))
         persona = ident["label"]
         ch = next((c for c in store.CHANNELS if c["id"] == target), None)
         where = f"the {ch['name']} channel ({ch['desc']})" if ch else "a support channel"
@@ -440,7 +460,7 @@ def _customer_loop(state: dict, key: str, models: list, channels: list, cap: int
                     continue
                 ch = next((c for c in store.CHANNELS if c["id"] == ch_id), None)
                 where = f"the {ch['name']} channel ({ch['desc']})" if ch else "a support channel"
-                ident = _new_customer()
+                ident = _new_customer(client_by_code(state.get("prefer")))
                 reply = _generate(ident["label"], _opener_messages(where, msgs, ident), key, models)
                 if reply:
                     store.bg_post_channel(ident["label"], ch_id, reply)
@@ -466,7 +486,11 @@ def _customer_state() -> dict:
     return state
 
 
-def touch() -> None:
+def touch(prefer_client: str = None) -> None:
     """Call from the Channels page's poller: marks that someone is watching and, on the first
-    call in a server process, starts the loop that lets customers open conversations."""
-    _customer_state()["last_seen"] = time.time()
+    call in a server process, starts the loop that lets customers open conversations.
+    `prefer_client` is the client account picked on the page; new questions come from that company
+    (None = any client)."""
+    state = _customer_state()
+    state["last_seen"] = time.time()
+    state["prefer"] = prefer_client

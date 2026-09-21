@@ -640,7 +640,7 @@ def _channel_msg_display(current_role: str):
 def _channel_msg_poller(current_role: str):
     """Silent polling fragment — detects new messages and triggers a full rerun.
     Renders nothing visible so images in _channel_msg_display never blink."""
-    ai_support.touch()                      # someone is watching → customers may open conversations
+    ai_support.touch(st.session_state.get("ch_customer_client"))   # someone is watching → customers may open conversations
     sel_id = st.session_state.get("ch_selected", store.CHANNELS[0]["id"])
     msgs = store.get_channel_messages(sel_id)
     sig = str([(m.get("ts", ""), bool(m.get("attachment"))) for m in msgs])
@@ -740,6 +740,7 @@ def _channel_compose(current_role: str):
                     if (msg_text or "").strip():
                         ai_support.schedule_reply(
                             "channel", sel_id, current_role, msg_text.strip(), ai_history,
+                            prefer_client=st.session_state.get("ch_customer_client"),
                         )
                     # Invalidate cache so _channel_msg_display fetches fresh on next rerun
                     st.session_state.pop(f"ch_msgs_{sel_id}", None)
@@ -3112,11 +3113,28 @@ def view_channels_page(*, role, **_):
         "Team Communication",
         "Team-wide channels and 1:1 direct messages. Use channels for group updates, DMs for private conversations.",
     )
-    tab_ch, tab_dm = st.tabs(["Channels", "Direct Messages"])
-    with tab_ch:
-        render_channels(role)
-    with tab_dm:
+    # Sub-navigation on the left; on the right, the client accounts whose customer takes part in the chat.
+    col_view, col_acct = st.columns([3.4, 8], gap="medium", vertical_alignment="center")
+    with col_view:
+        view = st.segmented_control(
+            "View", ["Channels", "Direct Messages"], default="Channels",
+            key="comm_view", label_visibility="collapsed",
+        ) or "Channels"
+    with col_acct:
+        clients = {c["code"]: c for c in tm.CLIENTS}
+        picked = st.pills(
+            "Customer account", list(clients), key="ch_customer_account", selection_mode="single",
+            format_func=lambda code: clients[code]["name"].split()[0],
+            help="Pick a client account: its customer asks and follows up in the channels. "
+                 "Nothing selected = customers from any account.",
+            label_visibility="collapsed",
+        )
+    st.session_state.ch_customer_client = picked      # client code, or None
+
+    if view == "Direct Messages":
         render_direct_messages(role)
+    else:
+        render_channels(role)
 
 
 # ============================================================
