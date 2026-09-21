@@ -11,11 +11,15 @@ generated and posted from a background thread so the UI never blocks; the existi
               (English → English, Chinese → Chinese).
   DMs       → the DM partner's role answers as a coworker, in the language it was written in.
 
-Models are tried in order — PRIMARY_MODELS (the three main ones) then FALLBACK_MODELS —
-because free models are often rate-limited (429) or overloaded. The API key is read from
-st.secrets["OPENROUTER_API_KEY"] (.streamlit/secrets.toml) or the OPENROUTER_API_KEY
-environment variable. OPENROUTER_PRIMARY_MODELS / OPENROUTER_FALLBACK_MODELS (TOML arrays)
-override the lists, since OpenRouter retires free model IDs regularly.
+Models are tried in order because free models are often rate-limited (429) or overloaded:
+the 3 PRIMARY_MODELS, then the curated FALLBACK_MODELS, then every other free chat model
+OpenRouter lists (fetched live and cached for 6 hours — see _discover_free_models), and finally
+"openrouter/free". The first usable reply wins. If OpenRouter says the account's daily free
+allowance is used up, the chain stops at once (that limit is shared by all free models).
+
+The API key is read from st.secrets["OPENROUTER_API_KEY"] (.streamlit/secrets.toml) or the
+OPENROUTER_API_KEY environment variable. OPENROUTER_PRIMARY_MODELS / OPENROUTER_FALLBACK_MODELS
+(TOML arrays) override the lists; setting the fallbacks also switches the live discovery off.
 """
 import html
 import os
@@ -36,14 +40,15 @@ REPLY_DELAY_S = (8, 12)          # "about 10 seconds"
 CUSTOMER_NAME = "Customers"      # sender name shown for the simulated customer in channels
 
 _API_URL = "https://openrouter.ai/api/v1/chat/completions"
-_PER_MODEL_TIMEOUT_S = 25
-_TOTAL_BUDGET_S = 60
+_PER_MODEL_TIMEOUT_S = 20        # a model that hasn't answered by now is skipped
+_TOTAL_BUDGET_S = 75             # across the whole chain of 20+ models
 _HISTORY_TURNS = 8
 _MAX_TOKENS = 600                # headroom: reasoning models spend part of this on hidden thinking
 _MAX_REPLY_CHARS = 450
 
-# Three main models, then progressively broader fallbacks. "openrouter/free" is last:
-# it auto-routes to whichever free model is currently available.
+# The three main models, then curated fallbacks. Every other free chat model is appended live
+# (see _discover_free_models) and "openrouter/free" — which auto-routes to whatever free model is
+# available — is always tried last.
 PRIMARY_MODELS = [
     "nvidia/nemotron-3-super-120b-a12b:free",
     "nvidia/nemotron-3-ultra-550b-a55b:free",
@@ -54,7 +59,6 @@ FALLBACK_MODELS = [
     "qwen/qwen3.8-27b:free",
     "z-ai/glm-5.2:free",
     "google/gemma-4-26b-a4b-it:free",
-    "openrouter/free",
 ]
 
 ALL_ROLES = [
@@ -198,11 +202,63 @@ def _secret(name: str, default=None):
     return os.environ.get(name, default)
 
 
-def _model_chain() -> list:
-    primary = list(_secret("OPENROUTER_PRIMARY_MODELS") or PRIMARY_MODELS)
-    fallback = list(_secret("OPENROUTER_FALLBACK_MODELS") or FALLBACK_MODELS)
-    seen, chain = set(), []
-    for m in primary + fallback:
+# ── model chain: 3 main models, then every other free chat model ─────────────
+# OpenRouter adds and retires free models all the time, so the list of extra fallbacks is fetched
+# from its public /models endpoint (cached, refreshed every 6 hours) instead of being hardcoded.
+
+_MODELS_URL = "https://openrouter.ai/api/v1/models"
+_DISCOVERY_TTL_S = 6 * 3600
+_discovered = {"ids": [], "next": 0.0}
+_discovery_lock = threading.Lock()
+
+_NOT_CHAT = re.compile(r"content-safety|guard|moderation|embed|lyria|tts|whisper|rerank|image", re.IGNORECASE)
+# Still usable, but tried after the general-purpose models: specialists, code, tiny, vision or preview builds.
+_LESS_GENERAL = re.compile(r"code|coder|-fin\b|-sante\b|-vl\b|lfm|mini|nano|small|lite|preview", re.IGNORECASE)
+
+
+def _discover_free_models() -> list:
+    """Every free text-chat model OpenRouter lists right now, general-purpose ones first (largest
+    context first). Returns the last good list if OpenRouter can't be reached; [] if there never was one."""
+    with _discovery_lock:
+        now = time.time()
+        if now < _discovered["next"]:
+            return list(_discovered["ids"])
+        try:
+            data = httpx.get(_MODELS_URL, timeout=10).json()["data"]
+        except Exception:
+            _discovered["next"] = now + 300                      # try again in 5 minutes
+            return list(_discovered["ids"])
+        general, other = [], []
+        for m in data:
+            mid = str(m.get("id", ""))
+            price = m.get("pricing") or {}
+            free = mid.endswith(":free") or (str(price.get("prompt")) == "0" and str(price.get("completion")) == "0")
+            out = (m.get("architecture") or {}).get("output_modalities") or ["text"]
+            if not free or out != ["text"] or _NOT_CHAT.search(mid) or mid == "openrouter/free":
+                continue
+            (other if _LESS_GENERAL.search(mid) else general).append((m.get("context_length") or 0, mid))
+        ids = [i for _, i in sorted(general, reverse=True)] + [i for _, i in sorted(other, reverse=True)]
+        _discovered["ids"], _discovered["next"] = ids, now + _DISCOVERY_TTL_S
+        return list(ids)
+
+
+def _model_config() -> tuple:
+    """Read the model settings on the Streamlit thread: (three main models, fallbacks, discover extras?).
+    Setting OPENROUTER_FALLBACK_MODELS in secrets.toml pins the fallbacks and turns discovery off."""
+    pinned = _secret("OPENROUTER_FALLBACK_MODELS")
+    return (
+        list(_secret("OPENROUTER_PRIMARY_MODELS") or PRIMARY_MODELS),
+        list(pinned or FALLBACK_MODELS),
+        not pinned,
+    )
+
+
+def _model_chain(cfg: tuple) -> list:
+    """The order models are tried in: the 3 main ones, the curated fallbacks, every other free chat
+    model, and finally OpenRouter's own auto-router."""
+    primary, fallback, discover = cfg
+    chain, seen = [], set()
+    for m in primary + fallback + (_discover_free_models() if discover else []) + ["openrouter/free"]:
         if m not in seen:
             seen.add(m)
             chain.append(m)
@@ -314,10 +370,13 @@ def _build_messages(persona: str, sender: str, where: str, history: list, text: 
 # ── model call ───────────────────────────────────────────────────────────────
 
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+_limit_until = 0.0                # while now < this, the daily free allowance is known to be used up
 
 
 def _call(model: str, messages: list, key: str, timeout: float):
-    """One attempt. Returns (text | None, fatal). fatal=True means stop trying (bad key)."""
+    """One attempt. Returns (text | None, fatal). fatal=True means stop trying (bad key, or the daily
+    free allowance is used up)."""
+    global _limit_until
     try:
         r = httpx.post(
             _API_URL,
@@ -332,6 +391,11 @@ def _call(model: str, messages: list, key: str, timeout: float):
     except httpx.HTTPError:
         return None, False                       # timeout / network → next model
     if r.status_code in (401, 403):
+        return None, True
+    if r.status_code == 429 and "free-models-per-day" in r.text:
+        # The account's daily free allowance is used up. It is shared by every free model, so
+        # trying more models is pointless — stop, and don't call again for a while.
+        _limit_until = time.time() + 1800
         return None, True
     if r.status_code != 200:
         return None, False                       # 429 / 5xx / 402 / 404 → next model
@@ -379,7 +443,11 @@ def _is_usable(text: str, persona: str) -> bool:
     return True
 
 
-def _generate(persona: str, messages: list, key: str, models: list):
+def _generate(persona: str, messages: list, key: str, cfg: tuple):
+    """First usable reply from the model chain, or None (all busy, or the daily allowance is used up)."""
+    if time.time() < _limit_until:
+        return None
+    models = _model_chain(cfg)                   # may fetch the free-model list (cached 6 h)
     deadline = time.monotonic() + _TOTAL_BUDGET_S
     for model in models:
         remaining = deadline - time.monotonic()
@@ -410,7 +478,7 @@ def schedule_reply(kind: str, target: str, sender: str, text: str, history: list
     key = (_secret("OPENROUTER_API_KEY") or "").strip()
     if not key or not text.strip():
         return
-    models = _model_chain()
+    cfg = _model_config()
 
     ident = None
     if kind == "dm":
@@ -432,7 +500,7 @@ def schedule_reply(kind: str, target: str, sender: str, text: str, history: list
     def _worker() -> None:
         try:
             started = time.monotonic()
-            reply = _generate(persona, messages, key, models)
+            reply = _generate(persona, messages, key, cfg)
             if not reply:
                 return
             # The delay includes model latency: wait out whatever is left of it.
@@ -518,7 +586,7 @@ def _idle_seconds(msgs: list) -> float:
         return 0.0
 
 
-def _customer_loop(state: dict, key: str, models: list, cap: int) -> None:
+def _customer_loop(state: dict, key: str, cfg: tuple, cap: int) -> None:
     while True:
         time.sleep(_LOOP_TICK_S)
         try:
@@ -540,7 +608,7 @@ def _customer_loop(state: dict, key: str, models: list, cap: int) -> None:
                 client = client_by_code(ch_id[len(store.CUSTOMER_PREFIX):])
                 ident = _new_customer(client)
                 reply = _generate(
-                    ident["label"], _opener_messages(_customer_where(ch_id), msgs, ident), key, models,
+                    ident["label"], _opener_messages(_customer_where(ch_id), msgs, ident), key, cfg,
                 )
                 if reply:
                     store.bg_post_channel(ident["label"], ch_id, reply)
@@ -559,7 +627,7 @@ def _customer_state() -> dict:
     if key:
         cap = int(_secret("CUSTOMER_DAILY_CAP") or _DAILY_CAP)
         threading.Thread(
-            target=_customer_loop, args=(state, key, _model_chain(), cap),
+            target=_customer_loop, args=(state, key, _model_config(), cap),
             name="ai-customer-loop", daemon=True,
         ).start()
     return state
