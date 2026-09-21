@@ -4,8 +4,8 @@ When someone sends a message, an AI replies in character after ~10 seconds. The 
 generated and posted from a background thread so the UI never blocks; the existing
 2-second message pollers pick it up.
 
-  Channels  → a customer of one of the Malaysian client companies (shown as e.g. "Autofix
-              Customer Tan Wei Ming") who raises specific concerns about their own servers,
+  Channels  → a customer of one of the client companies (shown as e.g. "Autofix Customer
+              Tan Wei Ming") who raises specific concerns about their own servers,
               always in Mandarin Chinese, so the team can practise serving customers.
   DMs       → the DM partner's role answers as a coworker, in the language it was written in.
 
@@ -74,15 +74,29 @@ _ROLE_DESC = {
 
 
 # ── customer identities ──────────────────────────────────────────────────────
-# Each customer is a named person at one of the Malaysian client companies, shown as e.g.
+# Each customer is a named person at one of the client companies, shown as e.g.
 # "Autofix Customer Tan Wei Ming". Identity is derived from that label, so a follow-up reply
 # keeps the same person, company and servers as the question that started the conversation.
 
+# Names fit the company's country. Every customer writes Mandarin, so outside Malaysia these are
+# Chinese-speaking staff (Singaporean Chinese, Chinese-Australian, Taiwanese managers in Vietnam,
+# Chinese-Indonesian).
 _MALAYSIAN_NAMES = [
     "Tan Wei Ming", "Lim Mei Ling", "Lee Jia Hui", "Wong Kah Yee", "Chong Wei Jie", "Ng Siew Lan",
     "Goh Chee Keong", "Teoh Li Ying", "Chan Kok Leong", "Ong Hui Min", "Yap Zhi Hao", "Low Pei Shan",
     "Ahmad Faiz", "Nur Aisyah", "Muhammad Hakim", "Siti Aminah", "Kumar Rajan", "Priya Nair",
 ]
+_NAMES_BY_COUNTRY = {
+    "Malaysia":  _MALAYSIAN_NAMES,
+    "Singapore": ["Tan Jia Hao", "Lim Shu Fen", "Ng Wei Liang", "Goh Xin Yi", "Chua Boon Kiat", "Teo Hui Ling",
+                  "Koh Zhi Wei", "Sim Yu Xuan"],
+    "Australia": ["Jason Liu", "Emily Chen", "Kevin Huang", "Michelle Wu", "David Zhang", "Grace Lin",
+                  "Andrew Xu", "Sophie Zhou"],
+    "Vietnam":   ["Chen Zhi Hao", "Lin Yu Ting", "Huang Jun Wei", "Wu Pei Ling", "Chang Ming Jie",
+                  "Tsai Mei Hua", "Liu Kai Xiang", "Hsu Yi Chen"],
+    "Indonesia": ["Hendra Wijaya", "Linda Susanto", "Kevin Tanoto", "Stefanie Halim", "Andi Gunawan",
+                  "Melissa Kurniawan", "Robert Santoso", "Jessica Salim"],
+}
 _CUSTOMER_TITLES = [
     "IT Executive", "Operations Manager", "Finance Executive", "Branch Manager",
     "Systems Administrator", "Head of Customer Service", "Warehouse Supervisor", "Project Coordinator",
@@ -99,8 +113,12 @@ def _client_short(client: dict) -> str:
 
 
 def _customer_clients() -> list:
-    my = [c for c in tm.CLIENTS if "Malaysia" in c["hq"]]     # Malaysian names → Malaysian companies
-    return my or list(tm.CLIENTS)
+    return list(tm.CLIENTS)                                   # every client account can have customers
+
+
+def _names_for(client: dict) -> list:
+    country = client["hq"].split(",")[-1].strip()             # "Kuala Lumpur, Malaysia" → "Malaysia"
+    return _NAMES_BY_COUNTRY.get(country, _MALAYSIAN_NAMES)
 
 
 def _make_identity(client: dict, person: str) -> dict:
@@ -116,7 +134,8 @@ def _make_identity(client: dict, person: str) -> dict:
 
 
 def _new_customer() -> dict:
-    return _make_identity(random.choice(_customer_clients()), random.choice(_MALAYSIAN_NAMES))
+    client = random.choice(_customer_clients())
+    return _make_identity(client, random.choice(_names_for(client)))
 
 
 def _customer_identity(history: list) -> dict:
