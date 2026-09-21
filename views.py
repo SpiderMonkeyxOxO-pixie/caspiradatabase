@@ -14,6 +14,7 @@ import pandas as pd
 import streamlit as st
 
 import ai_support
+import staff
 import store
 import telemetry as tm
 
@@ -67,6 +68,16 @@ ALL_ROLES = [
     "I.T Assistant", "Back-end Developer", "Dev-Ops",
     "Infrastructure Engineer", "Customer Service", "Data Analyst",
 ]
+
+# Everyone who can be messaged, forwarded to or assigned work: the roles plus the named support team.
+TEAM_PEOPLE = ALL_ROLES + staff.IDENTITIES
+
+
+def _identity(role: str) -> str:
+    """Who is acting: the signed-in person's own name (staff accounts) or, for the original role
+    accounts, the role itself. The overview pages pass a hard-coded role name; this swaps in the person."""
+    return st.session_state.get("staff_identity") or role
+
 
 TOOLKIT = [
     {"name": "GitHub", "category": "Source control & CI/CD", "url": "https://github.com",
@@ -330,6 +341,7 @@ _ROLE_COLOR = {
     "Customer Service":         "#f472b6",
     "Data Analyst":             "#2dd4bf",
     ai_support.CUSTOMER_NAME:   "#facc15",
+    **{staff.identity(p): p["color"] for p in staff.STAFF},
 }
 
 _IMAGE_MIMES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"}
@@ -375,7 +387,7 @@ def _fmt_size(n: int) -> str:
 
 def _forward_targets(current_role: str) -> list:
     """Flat list of forward destinations: '#channel' entries first, then '@Role' DMs."""
-    return [c["name"] for c in store.TEAM_CHANNELS] + [f"@{r}" for r in ALL_ROLES if r != current_role]
+    return [c["name"] for c in store.TEAM_CHANNELS] + [f"@{r}" for r in TEAM_PEOPLE if r != current_role]
 
 
 def _do_forward(m: dict, target: str, current_role: str, source_label: str) -> None:
@@ -582,7 +594,7 @@ def _channel_msg_display(current_role: str):
         _tick = st.session_state.get(f"ch_tick_{sel_id}", "—")
         st.markdown(
             f'<div style="text-align:right;font-size:0.72rem;color:var(--text-5);padding-top:8px;">'
-            f'{u_svg}{len(ALL_ROLES)}&nbsp;{c_svg}{len(msgs)}'
+            f'{u_svg}{len(TEAM_PEOPLE)}&nbsp;{c_svg}{len(msgs)}'
             f'&nbsp;<span style="color:#22c55e;font-size:0.65rem;" title="last synced">● {_tick}</span></div>',
             unsafe_allow_html=True,
         )
@@ -777,6 +789,7 @@ def _pick_team_channel(channel_id: str, seen: int) -> None:
 
 
 def render_channels(current_role: str):
+    current_role = _identity(current_role)
     # ── session init ────────────────────────────────────────────────────
     if "ch_selected" not in st.session_state:
         st.session_state.ch_selected = store.TEAM_CHANNELS[0]["id"]
@@ -847,6 +860,7 @@ def render_channels(current_role: str):
 
 
 def render_email_composer(current_role: str, client=None, snapshots=None, alerts=None):
+    current_role = _identity(current_role)
     info_card(
         title="Email",
         note="Compose and send emails to clients or team members. Templates pre-fill subject and body — "
@@ -908,6 +922,7 @@ def render_email_composer(current_role: str, client=None, snapshots=None, alerts
 def render_ticket_system(current_role: str, mode: str = "full"):
     """mode='full' for IT Assistant (all tickets, full CRUD).
     mode='cs' for Customer Service (own tickets, create + track)."""
+    current_role = _identity(current_role)
     info_card(
         title="Help Desk — Ticket System",
         note="Create, track and resolve support tickets. All tickets persist across sessions.",
@@ -998,6 +1013,7 @@ def render_ticket_system(current_role: str, mode: str = "full"):
 
 def render_report_generator(current_role: str, snapshots: list, alerts: pd.DataFrame,
                              backups: pd.DataFrame, histories: dict, client: dict):
+    current_role = _identity(current_role)
     info_card(
         title="Report Generator",
         note="Build and download reports from live telemetry data. Choose report type, select servers, pick format.",
@@ -2669,7 +2685,7 @@ def view_client_support_module(*, client, snapshots, alerts, role, **_):
                 with col_ep:
                     esc_priority = st.selectbox("Escalated Priority", ["High", "Critical"])
                 with col_ea:
-                    assign_to = st.selectbox("Assign To", ALL_ROLES)
+                    assign_to = st.selectbox("Assign To", TEAM_PEOPLE)
                 submitted = st.form_submit_button("Escalate Ticket", type="primary")
                 if submitted:
                     if not esc_reason:
@@ -3075,6 +3091,7 @@ def _dm_compose(current_role: str):
 
 def render_direct_messages(current_role: str):
     """1-to-1 direct message threads between roles."""
+    current_role = _identity(current_role)
     if "dm_selected" not in st.session_state:
         st.session_state.dm_selected = None
 
@@ -3086,7 +3103,7 @@ def render_direct_messages(current_role: str):
             'letter-spacing:0.1em;color:var(--text-5);margin-bottom:10px;">Direct Messages</div>',
             unsafe_allow_html=True,
         )
-        other_roles = [r for r in ALL_ROLES if r != current_role]
+        other_roles = [r for r in TEAM_PEOPLE if r != current_role]
         new_target = st.selectbox(
             "new_dm", ["— select —"] + other_roles,
             key=f"dm_new_{current_role}", label_visibility="collapsed",

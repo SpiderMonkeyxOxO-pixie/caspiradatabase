@@ -16,6 +16,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+import staff
 import telemetry as tm
 import store
 import views
@@ -195,22 +196,22 @@ div[data-testid="stVerticalBlockBorderWrapper"] { border: 1px solid rgba(var(--l
 div[data-testid="stVerticalBlockBorderWrapper"] > div { gap: 0.9rem; }
 
 /* ── Buttons ──────────────────────────────────────────────────────── */
-.stButton > button {
+.stButton button {
     background: rgba(var(--line-rgb),0.04) !important; border: 1px solid rgba(var(--line-rgb),0.1) !important;
     border-radius: 7px !important; color: var(--text-4) !important; font-weight: 500 !important;
     font-size: 0.83rem !important; font-family: 'Inter', sans-serif !important; transition: all 0.15s !important;
 }
-.stButton > button:hover { background: rgba(var(--line-rgb),0.08) !important; border-color: rgba(var(--line-rgb),0.18) !important; color: var(--text-2) !important; }
-.stButton > button[kind="primary"], .stButton > button[kind="primaryFormSubmit"] {
+.stButton button:hover { background: rgba(var(--line-rgb),0.08) !important; border-color: rgba(var(--line-rgb),0.18) !important; color: var(--text-2) !important; }
+.stButton button[kind="primary"], .stButton button[kind="primaryFormSubmit"] {
     background: rgba(34,211,238,0.13) !important; border-color: rgba(34,211,238,0.38) !important;
     color: #22d3ee !important; font-weight: 600 !important;
 }
-.stButton > button[kind="primary"]:hover, .stButton > button[kind="primaryFormSubmit"]:hover {
+.stButton button[kind="primary"]:hover, .stButton button[kind="primaryFormSubmit"]:hover {
     background: rgba(34,211,238,0.2) !important; border-color: rgba(34,211,238,0.55) !important;
     color: var(--accent-cyan-text) !important; box-shadow: 0 0 14px rgba(34,211,238,0.14) !important;
 }
-.stButton > button[kind="tertiary"] { background: transparent !important; border-color: transparent !important; color: var(--text-5) !important; }
-.stButton > button[kind="tertiary"]:hover { background: rgba(var(--line-rgb),0.05) !important; color: var(--text-3) !important; }
+.stButton button[kind="tertiary"] { background: transparent !important; border-color: transparent !important; color: var(--text-5) !important; }
+.stButton button[kind="tertiary"]:hover { background: rgba(var(--line-rgb),0.05) !important; color: var(--text-3) !important; }
 
 /* ── Popover trigger button ───────────────────────────────────────── */
 div[data-testid="stPopover"] > div > button {
@@ -368,7 +369,7 @@ div[data-testid="stExpander"] summary { color: var(--text-3) !important; font-we
 section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] > div > div[data-testid="stButton"] {
     margin: 1px 0 !important;
 }
-section[data-testid="stSidebar"] .stButton > button {
+section[data-testid="stSidebar"] .stButton button {
     background: transparent !important; border-color: transparent !important;
     border-left: 2px solid transparent !important; border-radius: 5px !important;
     color: var(--text-5) !important; font-size: 0.82rem !important; font-weight: 500 !important;
@@ -376,23 +377,23 @@ section[data-testid="stSidebar"] .stButton > button {
     justify-content: flex-start !important; letter-spacing: 0.005em !important;
     line-height: 1.4 !important;
 }
-section[data-testid="stSidebar"] .stButton > button:hover {
+section[data-testid="stSidebar"] .stButton button:hover {
     background: rgba(var(--line-rgb),0.04) !important;
     border-left-color: rgba(34,211,238,0.22) !important; color: var(--text-4) !important;
 }
-section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+section[data-testid="stSidebar"] .stButton button[kind="primary"] {
     background: rgba(34,211,238,0.07) !important;
     border-left-color: #22d3ee !important; border-right-color: transparent !important;
     border-top-color: transparent !important; border-bottom-color: transparent !important;
     color: var(--text-2) !important; font-weight: 600 !important; box-shadow: none !important;
 }
-section[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
+section[data-testid="stSidebar"] .stButton button[kind="primary"]:hover {
     background: rgba(34,211,238,0.1) !important; color: var(--text-1) !important;
 }
-section[data-testid="stSidebar"] .stButton > button[kind="tertiary"] {
+section[data-testid="stSidebar"] .stButton button[kind="tertiary"] {
     color: var(--text-6) !important; font-size: 0.79rem !important;
 }
-section[data-testid="stSidebar"] .stButton > button[kind="tertiary"]:hover {
+section[data-testid="stSidebar"] .stButton button[kind="tertiary"]:hover {
     background: rgba(var(--line-rgb),0.04) !important; color: var(--text-4) !important;
 }
 
@@ -422,9 +423,9 @@ span[data-baseweb="tag"] * { color: var(--accent-cyan-text) !important; fill: va
 .nav-group-label { color: var(--text-6) !important; font-size: 0.59rem; font-weight: 700; letter-spacing: 0.17em; text-transform: uppercase; padding: 10px 6px 3px; line-height: 1; }
 
 /* ── Sidebar nav: alignment ──────────────────────────────────────── */
-section[data-testid="stSidebar"] .stButton > button { padding-left: 12px !important; justify-content: flex-start !important; text-align: left !important; }
-section[data-testid="stSidebar"] .stButton > button > div { justify-content: flex-start !important; text-align: left !important; width: 100% !important; }
-section[data-testid="stSidebar"] .stButton > button p { text-align: left !important; margin: 0 !important; }
+section[data-testid="stSidebar"] .stButton button { padding-left: 12px !important; justify-content: flex-start !important; text-align: left !important; }
+section[data-testid="stSidebar"] .stButton button > div { justify-content: flex-start !important; text-align: left !important; width: 100% !important; }
+section[data-testid="stSidebar"] .stButton button p { text-align: left !important; margin: 0 !important; }
 
 /* ── Expander open state ──────────────────────────────────────────── */
 div[data-testid="stExpander"] details[open] { border-color: rgba(34,211,238,0.18) !important; }
@@ -524,6 +525,17 @@ ACCOUNTS = {
     "CSPR-Customer Service": "Customer Service",
     "CSPR-Data Analyst": "Data Analyst",
 }
+# The named support team: each person signs in with their own account and lands on the view
+# of the role in staff.py; their chat identity is their own name + position.
+for _p in staff.STAFF:
+    ACCOUNTS[staff.account(_p)] = _p["view"]
+
+
+def _account_label(account_name: str) -> str:
+    """Text shown next to an account: the person's position, or the role for the original accounts."""
+    person = staff.by_account(account_name)
+    return person["position"] if person else ACCOUNTS.get(account_name, "")
+
 
 ACCOUNT_PASSWORD = "@Tiger112211"
 
@@ -579,8 +591,9 @@ if st.session_state.auth_user is None:
         st.markdown(
             '<div class="login-accounts"><div class="login-accounts-label">Provisioned accounts</div>'
             + "".join(
-                f'<div class="login-account-row"><span>{name}</span><span class="login-account-role">{role}</span></div>'
-                for name, role in ACCOUNTS.items()
+                f'<div class="login-account-row"><span>{name}</span>'
+                f'<span class="login-account-role">{_account_label(name)}</span></div>'
+                for name in ACCOUNTS
             )
             + "</div>",
             unsafe_allow_html=True,
@@ -794,7 +807,7 @@ with st.sidebar:
         f"""
         <div class="sb-session">
             <div class="sb-session-row"><span class="live-dot"></span> All systems operational</div>
-            <div class="sb-session-meta">Signed in as <b>{st.session_state.auth_user}</b> &middot; {ACCOUNTS.get(st.session_state.auth_user, "")}</div>
+            <div class="sb-session-meta">Signed in as <b>{st.session_state.auth_user}</b> &middot; {_account_label(st.session_state.auth_user)}</div>
             <div class="sb-session-meta">Last refreshed {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}</div>
         </div>
         """,
@@ -916,7 +929,10 @@ if "store" not in st.session_state:
         store.get()
 else:
     store.get()
-_role = ACCOUNTS.get(st.session_state.auth_user, "")
+_role = ACCOUNTS.get(st.session_state.auth_user, "")          # which view to show
+_person = staff.by_account(st.session_state.auth_user)
+# Chat/author identity for this sign-in: the person's own name for staff accounts, else None (= role name).
+st.session_state.staff_identity = staff.identity(_person) if _person else None
 _mod  = st.session_state.active_module
 
 _base_kw = dict(
@@ -935,7 +951,7 @@ if _mod == "overview":
 else:
     _mod_fn = _MODULE_VIEW.get(_mod)
     if _mod_fn:
-        _mod_fn(**_base_kw, role=_role)
+        _mod_fn(**_base_kw, role=st.session_state.staff_identity or _role)
     else:
         st.warning(f"Module '{_mod}' not found.")
 

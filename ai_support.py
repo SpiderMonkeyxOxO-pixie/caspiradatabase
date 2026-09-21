@@ -4,9 +4,11 @@ When someone sends a message, an AI replies in character after ~10 seconds. The 
 generated and posted from a background thread so the UI never blocks; the existing
 2-second message pollers pick it up.
 
-  Channels  → a customer of one of the client companies (shown as e.g. "Autofix Customer
-              Tan Wei Ming") who raises specific concerns about their own servers,
-              always in Mandarin Chinese, so the team can practise serving customers.
+  Customer conversations (one per client account) → a customer of that company (shown as e.g.
+              "Autofix Customer Tan Wei Ming") who raises specific concerns about their own
+              servers, always in Mandarin Chinese, so the team can practise serving customers.
+  Team channels → a teammate role answers as a coworker, in the language it was written in
+              (English → English, Chinese → Chinese).
   DMs       → the DM partner's role answers as a coworker, in the language it was written in.
 
 Models are tried in order — PRIMARY_MODELS (the three main ones) then FALLBACK_MODELS —
@@ -26,6 +28,7 @@ from datetime import date, datetime
 import httpx
 import streamlit as st
 
+import staff
 import store
 import telemetry as tm
 
@@ -71,6 +74,33 @@ _ROLE_DESC = {
     "Customer Service": "talks to clients: their tickets, service status and SLA updates",
     "Data Analyst": "builds analytics, reports and data exports for the team and clients",
 }
+
+
+# Which roles plausibly chime in on each team channel (the sender is always excluded).
+_CHANNEL_ROLES = {
+    "general":           ALL_ROLES,
+    "incidents":         ["Monitoring", "I.T Assistant", "Dev-Ops", "Infrastructure Engineer", "Data Operation Specialist"],
+    "operations":        ["Monitoring", "Data Operation Specialist", "I.T Assistant", "Infrastructure Engineer"],
+    "database":          ["Data Operation Specialist", "Back-end Developer", "Data Analyst"],
+    "development":       ["Back-end Developer", "Dev-Ops"],
+    "deployments":       ["Dev-Ops", "Back-end Developer", "Monitoring"],
+    "security":          ["Infrastructure Engineer", "I.T Assistant", "Dev-Ops"],
+    "backups-dr":        ["Data Operation Specialist", "Infrastructure Engineer", "Monitoring"],
+    "client-updates":    ["Customer Service", "General Manager", "Monitoring"],
+    "reports-analytics": ["Data Analyst", "General Manager", "Data Operation Specialist"],
+    "on-call":           ["Monitoring", "Dev-Ops", "I.T Assistant", "Infrastructure Engineer"],
+    "infrastructure":    ["Infrastructure Engineer", "Dev-Ops", "Data Operation Specialist"],
+}
+
+
+def _pick_channel_persona(channel_id: str, sender: str, text: str) -> str:
+    """The teammate who answers in a team channel: the @mentioned role, else one that fits the topic."""
+    lowered = text.lower()
+    for role in ALL_ROLES:                                   # explicit "@Dev-Ops ..." wins
+        if role != sender and f"@{role.lower()}" in lowered:
+            return role
+    pool = [r for r in _CHANNEL_ROLES.get(channel_id, ALL_ROLES) if r != sender]
+    return random.choice(pool or [r for r in ALL_ROLES if r != sender])
 
 
 # ── customer identities ──────────────────────────────────────────────────────
@@ -181,6 +211,21 @@ def _model_chain() -> list:
 
 # ── prompts ──────────────────────────────────────────────────────────────────
 
+def _answerer(sender: str) -> str:
+    """Who is answering the customer. For a named staff member, include their job so the customer
+    asks fitting questions (a Manager gets escalations, Customer Service gets login problems...)."""
+    if not sender:
+        return "Whoever is on duty will answer you. "
+    person = staff.by_identity(sender)
+    if not person:
+        return f'The person answering you is their "{sender}". '
+    return (
+        f'The person answering you is {person["name"]}, their {person["position"]}. Their job: '
+        f'{person["details"]} Address them naturally by name, and raise things that fit their job '
+        "(for example ask a Manager to escalate, or ask Customer Service about a login problem). "
+    )
+
+
 def _customer_prompt(sender: str, where: str, ident: dict) -> str:
     c = ident["client"]
     servers = "; ".join(f"{s['name']} ({s['engine']} {s['role'].lower()}, {s['hostname']})" for s in ident["servers"])
@@ -189,7 +234,7 @@ def _customer_prompt(sender: str, where: str, ident: dict) -> str:
         "Your company pays Caspira for managed database monitoring (uptime, backups, performance, alerts, "
         f"maintenance, security, reports, billing). Caspira runs your databases, including: {servers}. "
         f"You are chatting with Caspira's support team in {where}. "
-        + (f'The person answering you is their "{sender}". ' if sender else "Whoever is on duty will answer you. ")
+        + _answerer(sender)
         + "Play this customer realistically so the team can practise serving customers.\n\n"
         "Rules:\n"
         "- Be SPECIFIC, like a real person with a real problem. Tie every concern to your own business "
@@ -358,9 +403,9 @@ def schedule_reply(kind: str, target: str, sender: str, text: str, history: list
     kind    "channel" (target = channel id) or "dm" (target = the partner role, who replies)
     sender  the role that just sent the message
     history messages before this one (dicts with "from" and "text"), oldest first
-    In a channel only customer channels ("cust-<client code>") get an answer, from a customer of that
-    company. Team channels are for people only. Silently does nothing if no API key is configured or
-    every model fails.
+    In a customer channel ("cust-<client code>") a customer of that company answers, in Chinese. In a team
+    channel a teammate role answers in character, in the language the message was written in. Silently
+    does nothing if no API key is configured or every model fails.
     """
     key = (_secret("OPENROUTER_API_KEY") or "").strip()
     if not key or not text.strip():
@@ -370,14 +415,16 @@ def schedule_reply(kind: str, target: str, sender: str, text: str, history: list
     ident = None
     if kind == "dm":
         persona, where = target, f"a direct message with the {sender}"
-        if persona == sender:
-            return
-    else:
-        if not store.is_customer_channel(target):
-            return                                    # team channels: people only
+        if persona == sender or persona not in _ROLE_DESC:
+            return                                    # only the simulated roles answer; real staff are people
+    elif store.is_customer_channel(target):
         ident = _customer_identity(history, client_by_code(target[len(store.CUSTOMER_PREFIX):]))
         persona = ident["label"]
         where = _customer_where(target)
+    else:                                             # team channel → a teammate answers
+        persona = _pick_channel_persona(target, sender, text)
+        ch = store.channel_by_id(target)
+        where = f"the {ch['name']} channel — {ch['desc']}"
 
     messages = _build_messages(persona, sender, where, history, text, ident)
     delay = random.uniform(*REPLY_DELAY_S)
@@ -420,6 +467,27 @@ _PRESENCE_S = 120                # "someone is watching" window after the last t
 _LOOP_TICK_S = 15
 
 
+# A different topic per new conversation, so the 11 companies don't all report the same incident.
+_OPENER_TOPICS = [
+    "a report or dashboard that has become much slower than usual",
+    "worry about whether last night's backup really completed and could be restored",
+    "a request to add a new database or server for a new project",
+    "a security question: who has access, or a suspicious login alert you received",
+    "an invoice or billing amount you do not understand",
+    "planned maintenance: when it happens and whether it hits your busy hours",
+    "the uptime / SLA figure in last month's report looks wrong to you",
+    "storage running low and what it would cost to expand",
+    "too many false-alarm alerts waking your staff up at night",
+    "disaster recovery: what happens if the main database server fails, and has it been tested",
+    "a data export or custom report you need by a deadline",
+    "a database upgrade or migration you are planning and want advice on",
+    "an error your application showed to your own customers yesterday",
+    "giving a new employee access, or removing a leaver's access",
+    "a sudden spike in database connections or CPU you noticed",
+    "a price or contract question for next year",
+]
+
+
 def _opener_messages(where: str, history: list, ident: dict) -> list:
     msgs = [{"role": "system", "content": _customer_prompt("", where, ident)}]
     for h in history[-_HISTORY_TURNS:]:
@@ -433,8 +501,10 @@ def _opener_messages(where: str, history: list, ident: dict) -> list:
         })
     msgs.append({
         "role": "user",
-        "content": "[Start now: write your first message to the support team about one specific problem or "
-                   "question of yours. Choose a topic that has not come up yet in this conversation.]",
+        "content": "[Start now: write your next message to the support team. Topic for this message: "
+                   f"{random.choice(_OPENER_TOPICS)}. Make the details your own — pick your own time, "
+                   "numbers and wording; do not reuse example times or error messages. Do not repeat "
+                   "anything already discussed in this conversation.]",
     })
     return msgs
 
