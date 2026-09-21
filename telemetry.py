@@ -44,6 +44,31 @@ CLIENTS = [
         "industry": "Retail & E-Commerce", "hq": "Jakarta, Indonesia",
         "tier": "Growth", "regions": ["APAC", "LATAM"], "host_count": 7,
     },
+    {
+        "name": "Kasturi Retail Sdn Bhd", "code": "kasturi", "domain": "kasturiretail.com.my",
+        "industry": "Retail & Supermarkets", "hq": "Petaling Jaya, Malaysia",
+        "tier": "Mid-Market", "regions": ["APAC"], "host_count": 8,
+    },
+    {
+        "name": "Nusantara Fintech Sdn Bhd", "code": "nusantara", "domain": "nusantarafintech.com.my",
+        "industry": "Financial Technology", "hq": "Kuala Lumpur, Malaysia",
+        "tier": "Enterprise", "regions": ["APAC", "EMEA"], "host_count": 18,
+    },
+    {
+        "name": "Cendekia Education Group", "code": "cendekia", "domain": "cendekia-edu.com.my",
+        "industry": "Education Services", "hq": "Johor Bahru, Malaysia",
+        "tier": "Growth", "regions": ["APAC"], "host_count": 6,
+    },
+    {
+        "name": "Orkid Hospitality Sdn Bhd", "code": "orkid", "domain": "orkidhospitality.com.my",
+        "industry": "Hotels & Hospitality", "hq": "Kota Kinabalu, Malaysia",
+        "tier": "Mid-Market", "regions": ["APAC"], "host_count": 10,
+    },
+    {
+        "name": "Tualang Plantations Bhd", "code": "tualang", "domain": "tualangplantations.com.my",
+        "industry": "Agribusiness & Plantations", "hq": "Kuching, Malaysia",
+        "tier": "Growth", "regions": ["APAC", "EMEA"], "host_count": 7,
+    },
 ]
 
 ENGINEERS = [
