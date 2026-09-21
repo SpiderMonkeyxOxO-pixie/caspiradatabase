@@ -63,14 +63,8 @@ def _chart_colors(n: int) -> list:
     """Cycle the chart palette to cover `n` series (fleets can exceed the base palette size)."""
     return [CHART_PALETTE[i % len(CHART_PALETTE)] for i in range(n)]
 
-ALL_ROLES = [
-    "General Manager", "Monitoring", "Data Operation Specialist",
-    "I.T Assistant", "Back-end Developer", "Dev-Ops",
-    "Infrastructure Engineer", "Customer Service", "Data Analyst",
-]
-
-# Everyone who can be messaged, forwarded to or assigned work: the roles plus the named support team.
-TEAM_PEOPLE = ALL_ROLES + staff.IDENTITIES
+# Everyone who can be messaged, forwarded to or assigned work: the named support team (staff.py).
+TEAM_PEOPLE = list(staff.IDENTITIES)
 
 
 def _identity(role: str) -> str:

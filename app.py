@@ -514,21 +514,9 @@ div[data-testid="stVerticalBlock"].st-key-dm_feed div[data-testid="stPopover"] >
 # ---------------------------------------------------------------------------
 # Sign-in gate — demo accounts provisioned for the IT Operations team
 # ---------------------------------------------------------------------------
-ACCOUNTS = {
-    "CSPR-Data Operation Specialist": "Data Operation Specialist",
-    "CSPR-Monitoring": "Monitoring",
-    "CSPR-I.T Assistant": "I.T Assistant",
-    "CSPR-General Manager": "General Manager",
-    "CSPR-Back-end Developer": "Back-end Developer",
-    "CSPR-Dev-Ops": "Dev-Ops",
-    "CSPR-Infrastructure Engineer": "Infrastructure Engineer",
-    "CSPR-Customer Service": "Customer Service",
-    "CSPR-Data Analyst": "Data Analyst",
-}
-# The named support team: each person signs in with their own account and lands on the view
-# of the role in staff.py; their chat identity is their own name + position.
-for _p in staff.STAFF:
-    ACCOUNTS[staff.account(_p)] = _p["view"]
+# Sign-in accounts are the named support team in staff.py: each person has their own account and lands
+# on the console view named in staff.py; their chat identity is their own name + position.
+ACCOUNTS = {staff.account(_p): _p["view"] for _p in staff.STAFF}
 
 
 def _account_label(account_name: str) -> str:
@@ -549,6 +537,13 @@ if st.session_state.auth_user is None:
     _acct, _sid = st.query_params.get("a"), st.query_params.get("s")
     if _acct in ACCOUNTS and _sid and store.touch_session(_acct, _sid):
         st.session_state.auth_user, st.session_state.session_id = _acct, _sid
+
+# An account that no longer exists (e.g. the old role accounts) can't stay signed in.
+if st.session_state.auth_user is not None and st.session_state.auth_user not in ACCOUNTS:
+    store.release_session(st.session_state.auth_user, st.session_state.session_id)
+    st.session_state.auth_user = None
+    st.session_state.logout_reason = "That account has been retired. Please sign in with your own account."
+    st.query_params.clear()
 
 if st.session_state.auth_user is None:
     _, login_col, _ = st.columns([1, 1.4, 1])

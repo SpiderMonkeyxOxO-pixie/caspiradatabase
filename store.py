@@ -107,6 +107,15 @@ def touch_session(account: str, session_id: str) -> bool:
         return True
 
 
+def live_accounts() -> set:
+    """Accounts that currently have someone signed in (heartbeat within the last SESSION_TTL_S)."""
+    try:
+        res = _sb().rpc("live_accounts", {"p_ttl": SESSION_TTL_S}).execute()
+        return set(res.data or [])
+    except Exception:
+        return set()
+
+
 def release_session(account: str, session_id: str) -> None:
     try:
         _sb().rpc("release_account_session", {"p_account": account, "p_session": session_id}).execute()

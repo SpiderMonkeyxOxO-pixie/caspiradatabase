@@ -7,9 +7,9 @@ generated and posted from a background thread so the UI never blocks; the existi
   Customer conversations (one per client account) → a customer of that company (shown as e.g.
               "Autofix Customer Tan Wei Ming") who raises specific concerns about their own
               servers, always in Mandarin Chinese, so the team can practise serving customers.
-  Team channels → a teammate role answers as a coworker, in the language it was written in
-              (English → English, Chinese → Chinese).
-  DMs       → the DM partner's role answers as a coworker, in the language it was written in.
+  Team channels → a teammate from staff.py answers as a coworker, in the language it was written in
+              (English → English, Chinese → Chinese) — but only one who is not signed in.
+  DMs       → the DM partner answers the same way, only if nobody is signed in as them.
 
 Models are tried in order because free models are often rate-limited (429) or overloaded:
 the 3 PRIMARY_MODELS, then the curated FALLBACK_MODELS, then every other free chat model
@@ -61,50 +61,36 @@ FALLBACK_MODELS = [
     "google/gemma-4-26b-a4b-it:free",
 ]
 
-ALL_ROLES = [
-    "General Manager", "Monitoring", "Data Operation Specialist",
-    "I.T Assistant", "Back-end Developer", "Dev-Ops",
-    "Infrastructure Engineer", "Customer Service", "Data Analyst",
-]
+# ── AI teammates: the named team in staff.py, when they are not signed in ─────
+# The team are real people who sign in. An AI teammate stands in only for someone who is NOT signed
+# in right now, so it never talks over a real person.
 
-_ROLE_DESC = {
-    "General Manager": "oversees delivery, SLAs, client relationships and budgets; cares about status, risks and deadlines",
-    "Monitoring": "watches alerts and incidents around the clock, triages them and runs the on-call rotation",
-    "Data Operation Specialist": "looks after database performance, backups, maintenance windows and health checks",
-    "I.T Assistant": "runs the help desk: tickets, the server status board, runbooks and routine emails",
-    "Back-end Developer": "writes queries and services, works on schemas, APIs and service health",
-    "Dev-Ops": "handles deployments, the CI/CD pipeline and configuration drift",
-    "Infrastructure Engineer": "owns the server fleet, capacity planning, disaster recovery and security/compliance",
-    "Customer Service": "talks to clients: their tickets, service status and SLA updates",
-    "Data Analyst": "builds analytics, reports and data exports for the team and clients",
+# Which positions plausibly chime in on a team channel. Channels not listed → anyone.
+_CHANNEL_POSITIONS = {
+    "incidents":         ["I.T Assistant", "Manager", "Supervisor", "Customer Service"],
+    "security":          ["I.T Assistant"],
+    "client-updates":    ["Customer Service", "Manager", "Supervisor", "Social Media Support Specialist"],
+    "reports-analytics": ["Manager", "Supervisor", "Computer Operator"],
 }
 
 
-# Which roles plausibly chime in on each team channel (the sender is always excluded).
-_CHANNEL_ROLES = {
-    "general":           ALL_ROLES,
-    "incidents":         ["Monitoring", "I.T Assistant", "Dev-Ops", "Infrastructure Engineer", "Data Operation Specialist"],
-    "operations":        ["Monitoring", "Data Operation Specialist", "I.T Assistant", "Infrastructure Engineer"],
-    "database":          ["Data Operation Specialist", "Back-end Developer", "Data Analyst"],
-    "development":       ["Back-end Developer", "Dev-Ops"],
-    "deployments":       ["Dev-Ops", "Back-end Developer", "Monitoring"],
-    "security":          ["Infrastructure Engineer", "I.T Assistant", "Dev-Ops"],
-    "backups-dr":        ["Data Operation Specialist", "Infrastructure Engineer", "Monitoring"],
-    "client-updates":    ["Customer Service", "General Manager", "Monitoring"],
-    "reports-analytics": ["Data Analyst", "General Manager", "Data Operation Specialist"],
-    "on-call":           ["Monitoring", "Dev-Ops", "I.T Assistant", "Infrastructure Engineer"],
-    "infrastructure":    ["Infrastructure Engineer", "Dev-Ops", "Data Operation Specialist"],
-}
+def _available_teammates(sender: str) -> list:
+    """Staff (dicts from staff.py) who could answer: not the sender, and nobody is signed in as them."""
+    live = store.live_accounts()
+    return [p for p in staff.STAFF if staff.identity(p) != sender and staff.account(p) not in live]
 
 
-def _pick_channel_persona(channel_id: str, sender: str, text: str) -> str:
-    """The teammate who answers in a team channel: the @mentioned role, else one that fits the topic."""
+def _pick_channel_persona(channel_id: str, sender: str, text: str):
+    """Who answers in a team channel: the @mentioned person, else one whose position fits the channel.
+    None if nobody suitable is available (e.g. the @mentioned person is signed in and will answer)."""
+    available = {staff.identity(p): p for p in _available_teammates(sender)}
     lowered = text.lower()
-    for role in ALL_ROLES:                                   # explicit "@Dev-Ops ..." wins
-        if role != sender and f"@{role.lower()}" in lowered:
-            return role
-    pool = [r for r in _CHANNEL_ROLES.get(channel_id, ALL_ROLES) if r != sender]
-    return random.choice(pool or [r for r in ALL_ROLES if r != sender])
+    for p in staff.STAFF:                                    # explicit "@庞统 ..." wins
+        if f"@{p['name'].lower()}" in lowered:
+            return staff.identity(p) if staff.identity(p) in available else None
+    positions = _CHANNEL_POSITIONS.get(channel_id)
+    pool = [i for i, p in available.items() if not positions or p["position"] in positions] or list(available)
+    return random.choice(pool) if pool else None
 
 
 # ── customer identities ──────────────────────────────────────────────────────
@@ -327,25 +313,26 @@ def _customer_prompt(sender: str, where: str, ident: dict) -> str:
 
 
 def _system_prompt(persona: str, sender: str, where: str) -> str:
+    person = staff.by_identity(persona) or {"name": persona, "position": "team member", "details": ""}
     return (
-        f'You are the "{persona}" on a small managed-services team at Caspira, which runs and monitors '
-        f"database servers for client companies. In your role you {_ROLE_DESC.get(persona, 'support the team')}.\n"
-        f"You are chatting on the internal team messenger ({where}) with your colleague, the "
+        f'You are {person["name"]}, the {person["position"]} on a small managed-services team at Caspira, '
+        "which runs and monitors database servers for client companies. Your job: "
+        f'{person["details"] or "support the team."}\n'
+        f"You are chatting on the internal team messenger ({where}) with your colleague "
         f'"{sender}". Reply to their latest message as a real coworker would.\n\n'
         "Rules:\n"
         "- LANGUAGE: reply in the same language as their latest message. English message → English reply; "
         "Chinese (Mandarin) message → Mandarin reply, in the same script they used (Simplified or Traditional). "
         "Follow the latest message only, even if earlier messages were in another language. Keep common "
         "technical terms (DB, SLA, CI/CD, backup) as-is. In Chinese, sound like a natural coworker, not a translation.\n"
-        "- Stay in character as the "
-        f"{persona}. Never say you are an AI, a model or a simulation.\n"
+        f"- Stay in character as {person['name']}. Never say you are an AI, a model or a simulation.\n"
         "- 1–2 short sentences, casual workplace tone, written like a chat message. No greeting ritual, "
         "no sign-off, no lists, no markdown, no emojis.\n"
         "- Answer what was asked with a plausible, specific update from your own line of work "
         '(e.g. "on plan — I\'m on the 3rd phase now", "backups finished clean overnight, verifying restores today"). '
         "Keep it consistent with earlier messages in the conversation.\n"
-        "- If asked something outside your role, say which colleague would know. The only roles on the team are: "
-        f"{', '.join(ALL_ROLES)}. Never refer to any other role or department.\n"
+        "- If asked something outside your job, say which colleague would know. The only people on the team are: "
+        f"{', '.join(staff.IDENTITIES)}. Never refer to any other person, role or department.\n"
         "- Output only the message text — no name prefix."
     )
 
@@ -482,15 +469,18 @@ def schedule_reply(kind: str, target: str, sender: str, text: str, history: list
 
     ident = None
     if kind == "dm":
-        persona, where = target, f"a direct message with the {sender}"
-        if persona == sender or persona not in _ROLE_DESC:
-            return                                    # only the simulated roles answer; real staff are people
+        persona, where = target, f"a direct message with {sender}"
+        person = staff.by_identity(persona)
+        if person is None or persona == sender or staff.account(person) in store.live_accounts():
+            return                                    # only stand in for someone who is not signed in
     elif store.is_customer_channel(target):
         ident = _customer_identity(history, client_by_code(target[len(store.CUSTOMER_PREFIX):]))
         persona = ident["label"]
         where = _customer_where(target)
     else:                                             # team channel → a teammate answers
         persona = _pick_channel_persona(target, sender, text)
+        if not persona:
+            return                                    # everyone suitable is signed in — they will answer
         ch = store.channel_by_id(target)
         where = f"the {ch['name']} channel — {ch['desc']}"
 
