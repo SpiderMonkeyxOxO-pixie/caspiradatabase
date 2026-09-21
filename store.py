@@ -4,6 +4,7 @@ get_channel_messages / get_thread / get_inbox always hit Supabase directly
 so messages appear for all users in real time. Everything else is
 session-state cached (refreshed on first page load per browser tab).
 """
+import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -12,11 +13,23 @@ import streamlit as st
 from supabase import create_client, Client
 
 # ── credentials ──────────────────────────────────────────────────────────────
-_SUPABASE_URL = "https://hsvmlcibtgthvrfscehl.supabase.co"
-_SUPABASE_KEY = (
+def _setting(name: str, default: str) -> str:
+    """SUPABASE_URL / SUPABASE_KEY from .streamlit/secrets.toml or the environment, else the default."""
+    try:
+        if name in st.secrets:
+            return str(st.secrets[name]).strip()
+    except Exception:
+        pass
+    return os.environ.get(name, default)
+
+
+# Default = the anon (public, RLS-governed) key of the project that holds the console's tables.
+_SUPABASE_URL = _setting("SUPABASE_URL", "https://ppjovyoimxpypzzxakyc.supabase.co")
+_SUPABASE_KEY = _setting(
+    "SUPABASE_KEY",
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
-    ".eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhzdm1sY2lidGd0aHZyZnNjZWhsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5OTQwODksImV4cCI6MjA5NjU3MDA4OX0"
-    ".gpmcWnh96rkiG_zxT5J5d289wT80jSXtlEoeuUfFubw"
+    ".eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBwam92eW9pbXhweXB6enhha3ljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMjQzNzAsImV4cCI6MjA5MTkwMDM3MH0"
+    ".OCCfrcrm-rjdBzFEE2vNzWMe8qPtUzsudvKM5dz9doA",
 )
 
 CHANNELS = [
@@ -280,6 +293,29 @@ def get_channel_messages(channel_id: str) -> list:
     except Exception as e:
         st.warning(f"⚠ Channel read error: {e}")
         return []
+
+
+def bg_post_channel(role: str, channel_id: str, text: str) -> None:
+    """Post to a channel from a background thread — no Streamlit session state, no st.* calls."""
+    create_client(_SUPABASE_URL, _SUPABASE_KEY).table("channel_messages").insert({
+        "id": str(uuid.uuid4())[:8],
+        "channel_id": channel_id,
+        "from_role": role,
+        "text": text,
+        "attachment": None,
+        "ts": datetime.now().isoformat(timespec="seconds"),
+    }).execute()
+
+
+def bg_send_dm(from_role: str, to_role: str, text: str) -> None:
+    """Send a DM from a background thread — no Streamlit session state, no st.* calls."""
+    create_client(_SUPABASE_URL, _SUPABASE_KEY).table("messages").insert({
+        "id": str(uuid.uuid4())[:8],
+        "thread_key": _thread_key(from_role, to_role),
+        "from_role": from_role,
+        "text": text,
+        "ts": datetime.now().isoformat(timespec="seconds"),
+    }).execute()
 
 
 def get_channel_summaries() -> dict:

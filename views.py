@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
+import ai_support
 import store
 import telemetry as tm
 
@@ -718,11 +719,16 @@ def _channel_compose(current_role: str):
                     if reply_to:
                         quote = f'↩ Replying to {reply_to["from"]}: "{reply_to["preview"]}"'
                         text = f"{quote}\n\n{text}" if text else f"{quote}."
+                    ai_history = list(st.session_state.get(f"ch_msgs_{sel_id}", []))
                     store.post_to_channel(
                         current_role, sel_id,
                         text,
                         attachment=attachment,
                     )
+                    if (msg_text or "").strip():
+                        ai_support.schedule_reply(
+                            "channel", sel_id, current_role, msg_text.strip(), ai_history,
+                        )
                     # Invalidate cache so _channel_msg_display fetches fresh on next rerun
                     st.session_state.pop(f"ch_msgs_{sel_id}", None)
                     st.session_state.pop(f"ch_sig_{sel_id}", None)
@@ -3041,7 +3047,11 @@ def _dm_compose(current_role: str):
                         text = msg_text.strip()
                         if reply_to:
                             text = f'↩ Replying to {reply_to["from"]}: "{reply_to["preview"]}"\n\n{text}'
+                        ai_history = list(st.session_state.get(f"dm_msgs_{current_role}_{sel}", []))
                         store.send_message(current_role, sel, text)
+                        ai_support.schedule_reply(
+                            "dm", sel, current_role, msg_text.strip(), ai_history,
+                        )
                         st.session_state.pop(f"dm_msgs_{current_role}_{sel}", None)
                         st.session_state.pop(f"dm_sig_{current_role}_{sel}", None)
                         st.session_state.pop(reply_key, None)
