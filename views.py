@@ -402,24 +402,27 @@ def _do_forward(m: dict, target: str, current_role: str, source_label: str) -> N
 def _message_action_menu(m: dict, current_role: str, source_label: str, prefix: str, on_delete, reply_key: str) -> None:
     """Per-message ⋮ menu — reply to, forward, or delete this message."""
     with st.popover(" ", icon=":material/more_vert:"):
-        if st.button("Reply", key=f"{prefix}_reply_btn_{m['id']}", icon=":material/reply:", width="stretch"):
+        if st.button("Reply", key=f"{prefix}_reply_btn_{m['id']}", icon=":material/reply:",
+                     type="tertiary", width="stretch"):
             preview = (m.get("text") or "").strip().replace("\n", " ")
             if len(preview) > 80:
                 preview = preview[:80] + "…"
             st.session_state[reply_key] = {"id": m["id"], "from": m["from"], "preview": preview}
             st.rerun()
-        st.divider()
-        st.caption("Forward to")
-        target = st.selectbox(
-            "Forward target", _forward_targets(current_role),
-            key=f"{prefix}_fwd_target_{m['id']}", label_visibility="collapsed",
-        )
-        if st.button("Forward", key=f"{prefix}_fwd_btn_{m['id']}", icon=":material/forward:", width="stretch"):
-            _do_forward(m, target, current_role, source_label)
-            st.toast(f"Forwarded to {target}", icon=":material/forward:")
-            st.rerun()
-        st.divider()
-        if st.button("Delete message", key=f"{prefix}_del_btn_{m['id']}", icon=":material/delete:", width="stretch"):
+        fc1, fc2 = st.columns([4, 1], gap="small", vertical_alignment="center")
+        with fc1:
+            target = st.selectbox(
+                "Forward to", _forward_targets(current_role),
+                key=f"{prefix}_fwd_target_{m['id']}", label_visibility="collapsed",
+            )
+        with fc2:
+            if st.button("", key=f"{prefix}_fwd_btn_{m['id']}", icon=":material/forward:",
+                         help="Forward to the selected channel or person", width="stretch"):
+                _do_forward(m, target, current_role, source_label)
+                st.toast(f"Forwarded to {target}", icon=":material/forward:")
+                st.rerun()
+        if st.button("Delete", key=f"{prefix}_del_btn_{m['id']}", icon=":material/delete:",
+                     type="tertiary", width="stretch"):
             on_delete(m["id"])
             st.toast("Message deleted", icon=":material/delete:")
             st.rerun()
