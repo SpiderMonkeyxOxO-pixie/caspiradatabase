@@ -352,15 +352,15 @@ def _generate(persona: str, messages: list, key: str, models: list):
 
 # ── public entry point ───────────────────────────────────────────────────────
 
-def schedule_reply(kind: str, target: str, sender: str, text: str, history: list, prefer_client: str = None) -> None:
-    """Have an AI teammate answer `text` ~10 seconds from now, without blocking the UI.
+def schedule_reply(kind: str, target: str, sender: str, text: str, history: list) -> None:
+    """Have an AI answer `text` ~10 seconds from now, without blocking the UI.
 
     kind    "channel" (target = channel id) or "dm" (target = the partner role, who replies)
     sender  the role that just sent the message
     history messages before this one (dicts with "from" and "text"), oldest first
-    prefer_client  client code (e.g. "autofix") whose customer should answer in a channel; None = continue
-                   with whoever spoke last
-    Silently does nothing if no API key is configured or every model fails.
+    In a channel only customer channels ("cust-<client code>") get an answer, from a customer of that
+    company. Team channels are for people only. Silently does nothing if no API key is configured or
+    every model fails.
     """
     key = (_secret("OPENROUTER_API_KEY") or "").strip()
     if not key or not text.strip():
@@ -373,10 +373,11 @@ def schedule_reply(kind: str, target: str, sender: str, text: str, history: list
         if persona == sender:
             return
     else:
-        ident = _customer_identity(history, client_by_code(prefer_client))
+        if not store.is_customer_channel(target):
+            return                                    # team channels: people only
+        ident = _customer_identity(history, client_by_code(target[len(store.CUSTOMER_PREFIX):]))
         persona = ident["label"]
-        ch = next((c for c in store.CHANNELS if c["id"] == target), None)
-        where = f"the {ch['name']} channel ({ch['desc']})" if ch else "a support channel"
+        where = _customer_where(target)
 
     messages = _build_messages(persona, sender, where, history, text, ident)
     delay = random.uniform(*REPLY_DELAY_S)
@@ -399,16 +400,21 @@ def schedule_reply(kind: str, target: str, sender: str, text: str, history: list
     threading.Thread(target=_worker, name="ai-teammate-reply", daemon=True).start()
 
 
+def _customer_where(channel_id: str) -> str:
+    ch = store.channel_by_id(channel_id)
+    return f"a private chat channel that exists only for {ch['name']}"
+
+
 # ── customers who speak first ────────────────────────────────────────────────
-# A background loop (one per server process) posts a new customer question into the customer
-# channels when the conversation has gone quiet. Guards keep it cheap and non-spammy:
-#   • only while someone has the Channels page open (touch() is called by its 2-second poller)
+# A background loop (one per server process) posts a new customer question into a customer
+# conversation when it is quiet. Guards keep it cheap and non-spammy:
+#   • only in a customer conversation someone is looking at right now (touch() is called by the
+#     open channel's 2-second poller) — the other companies' conversations stay untouched
 #   • never while the last message is an unanswered customer question
 #   • a random quiet gap between questions, and a daily cap (free OpenRouter keys allow ~50 requests/day)
 
-CUSTOMER_CHANNELS = ["client-updates"]
 _QUIET_GAP_S = (180, 360)        # how long a conversation must be quiet before a new question
-_DAILY_CAP = 15                  # new customer questions per day (follow-up replies are extra)
+_DAILY_CAP = 25                  # new customer questions per day (follow-up replies are extra)
 _PRESENCE_S = 120                # "someone is watching" window after the last touch()
 _LOOP_TICK_S = 15
 
@@ -441,27 +447,31 @@ def _idle_seconds(msgs: list) -> float:
         return 0.0
 
 
-def _customer_loop(state: dict, key: str, models: list, channels: list, cap: int) -> None:
+def _customer_loop(state: dict, key: str, models: list, cap: int) -> None:
     while True:
         time.sleep(_LOOP_TICK_S)
         try:
-            if time.time() - state["last_seen"] > _PRESENCE_S:
-                continue                                    # nobody is on the Channels page
+            now = time.time()
+            watched = [cid for cid, seen in list(state["watching"].items())
+                       if now - seen <= _PRESENCE_S and store.is_customer_channel(cid)]
+            if not watched:
+                continue                                    # nobody is looking at a customer conversation
             today = date.today().isoformat()
             if state["day"] != today:
                 state["day"], state["count"] = today, 0
             if state["count"] >= cap:
                 continue
-            for ch_id in channels:
+            for ch_id in watched:
                 msgs = store.bg_recent_channel_messages(ch_id, 12)
                 if msgs and is_customer(msgs[-1]["from"]):
                     continue                                # a question is still waiting for an answer
                 if _idle_seconds(msgs) < state["gap"]:
                     continue
-                ch = next((c for c in store.CHANNELS if c["id"] == ch_id), None)
-                where = f"the {ch['name']} channel ({ch['desc']})" if ch else "a support channel"
-                ident = _new_customer(client_by_code(state.get("prefer")))
-                reply = _generate(ident["label"], _opener_messages(where, msgs, ident), key, models)
+                client = client_by_code(ch_id[len(store.CUSTOMER_PREFIX):])
+                ident = _new_customer(client)
+                reply = _generate(
+                    ident["label"], _opener_messages(_customer_where(ch_id), msgs, ident), key, models,
+                )
                 if reply:
                     store.bg_post_channel(ident["label"], ch_id, reply)
                     state["count"] += 1
@@ -475,22 +485,17 @@ def _customer_loop(state: dict, key: str, models: list, channels: list, cap: int
 def _customer_state() -> dict:
     """Runs once per server process: resolve config on the Streamlit thread, start the loop."""
     key = (_secret("OPENROUTER_API_KEY") or "").strip()
-    state = {"last_seen": 0.0, "day": "", "count": 0, "gap": random.uniform(*_QUIET_GAP_S)}
+    state = {"watching": {}, "day": "", "count": 0, "gap": random.uniform(*_QUIET_GAP_S)}
     if key:
-        channels = list(_secret("CUSTOMER_CHANNELS") or CUSTOMER_CHANNELS)
         cap = int(_secret("CUSTOMER_DAILY_CAP") or _DAILY_CAP)
         threading.Thread(
-            target=_customer_loop, args=(state, key, _model_chain(), channels, cap),
+            target=_customer_loop, args=(state, key, _model_chain(), cap),
             name="ai-customer-loop", daemon=True,
         ).start()
     return state
 
 
-def touch(prefer_client: str = None) -> None:
-    """Call from the Channels page's poller: marks that someone is watching and, on the first
-    call in a server process, starts the loop that lets customers open conversations.
-    `prefer_client` is the client account picked on the page; new questions come from that company
-    (None = any client)."""
-    state = _customer_state()
-    state["last_seen"] = time.time()
-    state["prefer"] = prefer_client
+def touch(channel_id: str) -> None:
+    """Call from the open channel's poller: records that someone is looking at `channel_id` and, on the
+    first call in a server process, starts the loop that lets customers open conversations."""
+    _customer_state()["watching"][channel_id] = time.time()

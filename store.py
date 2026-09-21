@@ -12,6 +12,8 @@ from datetime import datetime
 import streamlit as st
 from supabase import create_client, Client
 
+import telemetry as tm
+
 # ── credentials ──────────────────────────────────────────────────────────────
 def _setting(name: str, default: str) -> str:
     """SUPABASE_URL / SUPABASE_KEY from .streamlit/secrets.toml or the environment, else the default."""
@@ -32,8 +34,8 @@ _SUPABASE_KEY = _setting(
     ".OCCfrcrm-rjdBzFEE2vNzWMe8qPtUzsudvKM5dz9doA",
 )
 
-CHANNELS = [
-    {"id": "general",           "name": "#general",            "desc": "Company-wide announcements and general discussion"},
+TEAM_CHANNELS = [
+    {"id": "general",          "name": "#general",            "desc": "Company-wide announcements and general discussion"},
     {"id": "incidents",         "name": "#incidents",           "desc": "Active incident response and real-time coordination"},
     {"id": "operations",        "name": "#operations",          "desc": "Day-to-day ops — uptime, runbooks and shift handoffs"},
     {"id": "database",          "name": "#database",            "desc": "Database administration, queries and schema changes"},
@@ -46,6 +48,26 @@ CHANNELS = [
     {"id": "on-call",           "name": "#on-call",             "desc": "On-call handoffs, escalations and schedule changes"},
     {"id": "infrastructure",    "name": "#infrastructure",      "desc": "Cloud infrastructure, capacity planning and provisioning"},
 ]
+
+# One separate conversation per client account. Stored in the same channel_messages table under
+# the id "cust-<client code>", so each customer's history is independent of the others.
+CUSTOMER_PREFIX = "cust-"
+CUSTOMER_CHANNELS = [
+    {"id": f"{CUSTOMER_PREFIX}{c['code']}", "name": c["name"],
+     "desc": f"Customer conversation · {c['industry']} · {c['hq']}", "client": c["code"]}
+    for c in tm.CLIENTS
+]
+
+CHANNELS = TEAM_CHANNELS + CUSTOMER_CHANNELS      # everything a message can be posted to
+
+
+def channel_by_id(channel_id: str) -> dict:
+    """Channel metadata for a team or customer channel (falls back to the first team channel)."""
+    return next((c for c in CHANNELS if c["id"] == channel_id), TEAM_CHANNELS[0])
+
+
+def is_customer_channel(channel_id: str) -> bool:
+    return str(channel_id).startswith(CUSTOMER_PREFIX)
 
 # ── Supabase client ───────────────────────────────────────────────────────────
 

@@ -375,7 +375,7 @@ def _fmt_size(n: int) -> str:
 
 def _forward_targets(current_role: str) -> list:
     """Flat list of forward destinations: '#channel' entries first, then '@Role' DMs."""
-    return [c["name"] for c in store.CHANNELS] + [f"@{r}" for r in ALL_ROLES if r != current_role]
+    return [c["name"] for c in store.TEAM_CHANNELS] + [f"@{r}" for r in ALL_ROLES if r != current_role]
 
 
 def _do_forward(m: dict, target: str, current_role: str, source_label: str) -> None:
@@ -386,7 +386,7 @@ def _do_forward(m: dict, target: str, current_role: str, source_label: str) -> N
     body = f"{prefix}:\n{text}" if text else f"{prefix}."
 
     if target.startswith("#"):
-        ch_id = next(c["id"] for c in store.CHANNELS if c["name"] == target)
+        ch_id = next(c["id"] for c in store.TEAM_CHANNELS if c["name"] == target)
         store.post_to_channel(current_role, ch_id, body, attachment=att)
         st.session_state.pop(f"ch_msgs_{ch_id}", None)
         st.session_state.pop(f"ch_sig_{ch_id}", None)
@@ -547,8 +547,9 @@ def _chat_bubble(m: dict, current_role: str, prev_from, prev_dt):
 def _channel_msg_display(current_role: str):
     """Non-fragment display: reads messages from session_state, renders header + bubbles.
     Only called during full app reruns so images never blink from polling."""
-    sel_id = st.session_state.get("ch_selected", store.CHANNELS[0]["id"])
-    sel_ch = next((c for c in store.CHANNELS if c["id"] == sel_id), store.CHANNELS[0])
+    sel_id = st.session_state.get("ch_selected", store.TEAM_CHANNELS[0]["id"])
+    sel_ch = store.channel_by_id(sel_id)
+    sel_id = sel_ch["id"]
 
     msgs_key = f"ch_msgs_{sel_id}"
     if msgs_key not in st.session_state:
@@ -564,7 +565,7 @@ def _channel_msg_display(current_role: str):
         st.session_state.ch_last_seen = {}
     st.session_state.ch_last_seen[sel_id] = len(msgs)
 
-    ch_icon_svg = _svg(_CH_SVG.get(sel_id, ""), 18, "#22d3ee", "margin-right:7px;")
+    ch_icon_svg = _svg(_CH_SVG.get(sel_id, _SVG_USERS), 18, "#22d3ee", "margin-right:7px;")
     hc1, hc2 = st.columns([5, 1])
     with hc1:
         st.markdown(
@@ -596,7 +597,7 @@ def _channel_msg_display(current_role: str):
 
     with st.container(height=560, border=True, key="ch_feed"):
         if not msgs:
-            empty_icon = _svg(_CH_SVG.get(sel_id, ""), 40, "var(--border-color)")
+            empty_icon = _svg(_CH_SVG.get(sel_id, _SVG_USERS), 40, "var(--border-color)")
             st.markdown(
                 f'<div style="display:flex;flex-direction:column;align-items:center;'
                 f'justify-content:center;height:100%;padding:52px 0;">'
@@ -640,8 +641,8 @@ def _channel_msg_display(current_role: str):
 def _channel_msg_poller(current_role: str):
     """Silent polling fragment — detects new messages and triggers a full rerun.
     Renders nothing visible so images in _channel_msg_display never blink."""
-    ai_support.touch(st.session_state.get("ch_customer_client"))   # someone is watching → customers may open conversations
-    sel_id = st.session_state.get("ch_selected", store.CHANNELS[0]["id"])
+    sel_id = store.channel_by_id(st.session_state.get("ch_selected", store.TEAM_CHANNELS[0]["id"]))["id"]
+    ai_support.touch(sel_id)                # someone is watching this conversation → a customer may speak first
     msgs = store.get_channel_messages(sel_id)
     sig = str([(m.get("ts", ""), bool(m.get("attachment"))) for m in msgs])
     if st.session_state.get(f"ch_sig_{sel_id}") != sig:
@@ -654,8 +655,8 @@ def _channel_msg_poller(current_role: str):
 
 def _channel_compose(current_role: str):
     """Stable compose form — lives OUTSIDE the polling fragment so it never blinks."""
-    sel_id = st.session_state.get("ch_selected", store.CHANNELS[0]["id"])
-    sel_ch = next((c for c in store.CHANNELS if c["id"] == sel_id), store.CHANNELS[0])
+    sel_ch = store.channel_by_id(st.session_state.get("ch_selected", store.TEAM_CHANNELS[0]["id"]))
+    sel_id = sel_ch["id"]
 
     reply_key = f"ch_reply_{sel_id}"
     reply_to = st.session_state.get(reply_key)
@@ -740,7 +741,6 @@ def _channel_compose(current_role: str):
                     if (msg_text or "").strip():
                         ai_support.schedule_reply(
                             "channel", sel_id, current_role, msg_text.strip(), ai_history,
-                            prefer_client=st.session_state.get("ch_customer_client"),
                         )
                     # Invalidate cache so _channel_msg_display fetches fresh on next rerun
                     st.session_state.pop(f"ch_msgs_{sel_id}", None)
@@ -749,10 +749,17 @@ def _channel_compose(current_role: str):
                     st.rerun()
 
 
+def _pick_team_channel(channel_id: str, seen: int) -> None:
+    """Button callback: open a team channel and deselect any customer-account chip."""
+    st.session_state.ch_selected = channel_id
+    st.session_state.ch_last_seen[channel_id] = seen
+    st.session_state.ch_customer_account = None
+
+
 def render_channels(current_role: str):
     # ── session init ────────────────────────────────────────────────────
     if "ch_selected" not in st.session_state:
-        st.session_state.ch_selected = store.CHANNELS[0]["id"]
+        st.session_state.ch_selected = store.TEAM_CHANNELS[0]["id"]
     if "ch_last_seen" not in st.session_state:
         st.session_state.ch_last_seen = {}
 
@@ -766,7 +773,7 @@ def render_channels(current_role: str):
             unsafe_allow_html=True,
         )
         _summaries = store.get_channel_summaries()
-        for ch in store.CHANNELS:
+        for ch in store.TEAM_CHANNELS:
             msgs    = _summaries.get(ch["id"], [])
             unread  = max(0, len(msgs) - st.session_state.ch_last_seen.get(ch["id"], 0))
             active  = st.session_state.ch_selected == ch["id"]
@@ -797,16 +804,15 @@ def render_channels(current_role: str):
                 )
             with btn:
                 label = ch["name"] + (f" ({unread})" if unread and not active else "")
-                if st.button(
+                st.button(
                     label,
                     key=f"ch_btn_{ch['id']}",
                     type="primary" if active else "secondary",
                     width="stretch",
                     help=ch["desc"],
-                ):
-                    st.session_state.ch_selected = ch["id"]
-                    st.session_state.ch_last_seen[ch["id"]] = len(msgs)
-                    st.rerun()
+                    on_click=_pick_team_channel,
+                    args=(ch["id"], len(msgs)),
+                )
 
             if preview_line:
                 st.markdown(
@@ -3108,28 +3114,38 @@ def render_direct_messages(current_role: str):
         _dm_compose(current_role)
 
 
+def _pick_customer_channel() -> None:
+    """Pills callback: open the chosen company's own conversation (none chosen → back to #general)."""
+    code = st.session_state.get("ch_customer_account")
+    st.session_state.ch_selected = (
+        f"{store.CUSTOMER_PREFIX}{code}" if code else store.TEAM_CHANNELS[0]["id"]
+    )
+    st.session_state.comm_view = "Channels"
+
+
 def view_channels_page(*, role, **_):
     info_card(
         "Team Communication",
-        "Team-wide channels and 1:1 direct messages. Use channels for group updates, DMs for private conversations.",
+        "Team channels and 1:1 direct messages, plus a separate conversation with each client account — "
+        "pick an account above to serve its customer.",
     )
-    # Sub-navigation on the left; on the right, the client accounts whose customer takes part in the chat.
+    # Sub-navigation on the left; on the right, one chip per client account — each is its own conversation.
     col_view, col_acct = st.columns([3.4, 8], gap="medium", vertical_alignment="center")
     with col_view:
         view = st.segmented_control(
-            "View", ["Channels", "Direct Messages"], default="Channels",
+            "View", ["Channels", "Direct Messages"],
             key="comm_view", label_visibility="collapsed",
         ) or "Channels"
     with col_acct:
         clients = {c["code"]: c for c in tm.CLIENTS}
-        picked = st.pills(
+        st.pills(
             "Customer account", list(clients), key="ch_customer_account", selection_mode="single",
             format_func=lambda code: clients[code]["name"].split()[0],
-            help="Pick a client account: its customer asks and follows up in the channels. "
-                 "Nothing selected = customers from any account.",
+            on_change=_pick_customer_channel,
+            help="Each client account has its own separate conversation with its own customer. "
+                 "Click again to go back to the team channels.",
             label_visibility="collapsed",
         )
-    st.session_state.ch_customer_client = picked      # client code, or None
 
     if view == "Direct Messages":
         render_direct_messages(role)
