@@ -1,15 +1,12 @@
-"""AI teammates for Channels and Direct Messages, backed by OpenRouter free models.
+"""AI simulation for Channels and Direct Messages, backed by OpenRouter free models.
 
-When someone sends a message, an AI plays one of the other team roles and replies in
-character after ~10 seconds:
+When someone sends a message, an AI replies in character after ~10 seconds. The reply is
+generated and posted from a background thread so the UI never blocks; the existing
+2-second message pollers pick it up.
 
-    Data Operation Specialist: How's the work going?
-    Back-end Developer:        Stable and on plan — I'm on the 3rd phase now.
-
-The reply is generated and posted from a background thread so the UI never blocks; the
-existing 2-second message pollers pick it up. In a DM the partner role replies. In a
-channel the reply comes from the role @mentioned in the message, otherwise a role that
-fits the channel's topic.
+  Channels  → "Customers": a client of the company who asks the team questions, always in
+              Mandarin Chinese, so the team can practise serving customers.
+  DMs       → the DM partner's role answers as a coworker, in the language it was written in.
 
 Models are tried in order — PRIMARY_MODELS (the three main ones) then FALLBACK_MODELS —
 because free models are often rate-limited (429) or overloaded. The API key is read from
@@ -30,6 +27,7 @@ import streamlit as st
 import store
 
 REPLY_DELAY_S = (8, 12)          # "about 10 seconds"
+CUSTOMER_NAME = "Customers"      # sender name shown for the simulated customer in channels
 
 _API_URL = "https://openrouter.ai/api/v1/chat/completions"
 _PER_MODEL_TIMEOUT_S = 25
@@ -71,21 +69,6 @@ _ROLE_DESC = {
     "Data Analyst": "builds analytics, reports and data exports for the team and clients",
 }
 
-# Which roles plausibly chime in on each channel (the sender is always excluded).
-_CHANNEL_ROLES = {
-    "general":           ALL_ROLES,
-    "incidents":         ["Monitoring", "I.T Assistant", "Dev-Ops", "Infrastructure Engineer", "Data Operation Specialist"],
-    "operations":        ["Monitoring", "Data Operation Specialist", "I.T Assistant", "Infrastructure Engineer"],
-    "database":          ["Data Operation Specialist", "Back-end Developer", "Data Analyst"],
-    "development":       ["Back-end Developer", "Dev-Ops"],
-    "deployments":       ["Dev-Ops", "Back-end Developer", "Monitoring"],
-    "security":          ["Infrastructure Engineer", "I.T Assistant", "Dev-Ops"],
-    "backups-dr":        ["Data Operation Specialist", "Infrastructure Engineer", "Monitoring"],
-    "client-updates":    ["Customer Service", "General Manager", "Monitoring"],
-    "reports-analytics": ["Data Analyst", "General Manager", "Data Operation Specialist"],
-    "on-call":           ["Monitoring", "Dev-Ops", "I.T Assistant", "Infrastructure Engineer"],
-    "infrastructure":    ["Infrastructure Engineer", "Dev-Ops", "Data Operation Specialist"],
-}
 
 
 # ── configuration (resolved on the main thread, passed into the worker) ──────
@@ -111,26 +94,45 @@ def _model_chain() -> list:
     return chain
 
 
-# ── who replies ──────────────────────────────────────────────────────────────
+# ── prompts ──────────────────────────────────────────────────────────────────
 
-def _pick_channel_persona(channel_id: str, sender: str, text: str) -> str:
-    lowered = text.lower()
-    for role in ALL_ROLES:                                   # explicit "@Dev-Ops ..." wins
-        if role != sender and f"@{role.lower()}" in lowered:
-            return role
-    pool = [r for r in _CHANNEL_ROLES.get(channel_id, ALL_ROLES) if r != sender]
-    return random.choice(pool or [r for r in ALL_ROLES if r != sender])
+def _customer_prompt(sender: str, where: str) -> str:
+    return (
+        "You are a customer — a staff member at a client company that pays Caspira for managed database "
+        "monitoring (uptime, backups, performance, alerts, maintenance, security, reports, billing). "
+        f"You are chatting with Caspira's support team in {where}. The person answering you is their "
+        f'"{sender}". Play the customer realistically so the team can practise serving customers.\n\n'
+        "Rules:\n"
+        "- LANGUAGE: always write in Mandarin Chinese, whatever language the team member uses — the team "
+        "cannot read English. Use Simplified Chinese unless they write in Traditional, then use Traditional. "
+        "Keep common terms such as DB, SLA, backup as-is. Natural, everyday business Chinese.\n"
+        "- 1–3 short sentences, like a chat message. No markdown, no lists, no emojis, no sign-off.\n"
+        "- You ask a lot of questions. Most of your messages should contain a new, concrete question or "
+        "request (e.g. why the system was slow this morning, when the last backup ran, whether data can be "
+        "restored, when maintenance happens, how an invoice or SLA works, how to add a new database, who to "
+        "call in an emergency). Sometimes report a problem or sound worried or impatient.\n"
+        "- React to what the team member just said (thank them, doubt them, or ask a follow-up) before or "
+        "while asking the next thing. If they greet you, introduce your concern with a question.\n"
+        "- Do not repeat questions already asked in the conversation; move on to new topics. You are not a "
+        "technical expert and don't know Caspira's internal details.\n"
+        "- Never say you are an AI, a model or a simulation.\n"
+        "- Output only the message text — no name prefix."
+    )
 
-
-# ── prompt ───────────────────────────────────────────────────────────────────
 
 def _system_prompt(persona: str, sender: str, where: str) -> str:
+    if persona == CUSTOMER_NAME:
+        return _customer_prompt(sender, where)
     return (
         f'You are the "{persona}" on a small managed-services team at Caspira, which runs and monitors '
         f"database servers for client companies. In your role you {_ROLE_DESC.get(persona, 'support the team')}.\n"
         f"You are chatting on the internal team messenger ({where}) with your colleague, the "
         f'"{sender}". Reply to their latest message as a real coworker would.\n\n'
         "Rules:\n"
+        "- LANGUAGE: reply in the same language as their latest message. English message → English reply; "
+        "Chinese (Mandarin) message → Mandarin reply, in the same script they used (Simplified or Traditional). "
+        "Follow the latest message only, even if earlier messages were in another language. Keep common "
+        "technical terms (DB, SLA, CI/CD, backup) as-is. In Chinese, sound like a natural coworker, not a translation.\n"
         "- Stay in character as the "
         f"{persona}. Never say you are an AI, a model or a simulation.\n"
         "- 1–2 short sentences, casual workplace tone, written like a chat message. No greeting ritual, "
@@ -138,7 +140,8 @@ def _system_prompt(persona: str, sender: str, where: str) -> str:
         "- Answer what was asked with a plausible, specific update from your own line of work "
         '(e.g. "on plan — I\'m on the 3rd phase now", "backups finished clean overnight, verifying restores today"). '
         "Keep it consistent with earlier messages in the conversation.\n"
-        "- If asked something outside your role, say who on the team would know.\n"
+        "- If asked something outside your role, say which colleague would know. The only roles on the team are: "
+        f"{', '.join(ALL_ROLES)}. Never refer to any other role or department.\n"
         "- Output only the message text — no name prefix."
     )
 
@@ -192,11 +195,12 @@ def _call(model: str, messages: list, key: str, timeout: float):
 def _clean(text: str, persona: str) -> str:
     """Strip name prefixes / markdown / quotes, cap length, then HTML-escape — the chat feed
     renders message text as raw HTML."""
-    text = re.sub(rf"^\s*\**{re.escape(persona)}\**\s*:\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(rf"^\s*\**(?:{re.escape(persona)}|客户|顧客|顾客)\**\s*[:：]\s*", "", text, flags=re.IGNORECASE)
     text = text.replace("**", "").replace("`", "").strip().strip('"“”')
     if len(text) > _MAX_REPLY_CHARS:
         cut = text[:_MAX_REPLY_CHARS]
-        text = (cut.rsplit(". ", 1)[0] + ".") if ". " in cut else cut.rstrip() + "…"
+        ends = list(re.finditer(r"[。！？]|[.!?](?=\s)", cut))     # English and Chinese sentence ends
+        text = cut[:ends[-1].end()] if ends else cut.rstrip() + "…"
     return html.escape(text)
 
 
@@ -236,9 +240,9 @@ def schedule_reply(kind: str, target: str, sender: str, text: str, history: list
         if persona == sender:
             return
     else:
-        persona = _pick_channel_persona(target, sender, text)
+        persona = CUSTOMER_NAME
         ch = next((c for c in store.CHANNELS if c["id"] == target), None)
-        where = f"the {ch['name']} channel — {ch['desc']}" if ch else "a team channel"
+        where = f"the {ch['name']} channel ({ch['desc']})" if ch else "a support channel"
 
     messages = _build_messages(persona, sender, where, history, text)
     delay = random.uniform(*REPLY_DELAY_S)

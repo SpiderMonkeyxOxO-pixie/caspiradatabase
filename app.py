@@ -495,7 +495,7 @@ div[data-testid="stVerticalBlock"].st-key-dm_feed div[data-testid="stHorizontalB
 }
 div[data-testid="stVerticalBlock"].st-key-ch_feed div[data-testid="stCheckbox"],
 div[data-testid="stVerticalBlock"].st-key-dm_feed div[data-testid="stCheckbox"] {
-    margin-top: 14px;
+    margin-top: 0;
 }
 div[data-testid="stVerticalBlock"].st-key-ch_feed label[data-baseweb="checkbox"]:has(input:not(:checked)) > span,
 div[data-testid="stVerticalBlock"].st-key-dm_feed label[data-baseweb="checkbox"]:has(input:not(:checked)) > span {
@@ -504,7 +504,7 @@ div[data-testid="stVerticalBlock"].st-key-dm_feed label[data-baseweb="checkbox"]
 }
 div[data-testid="stVerticalBlock"].st-key-ch_feed div[data-testid="stPopover"] > div > button,
 div[data-testid="stVerticalBlock"].st-key-dm_feed div[data-testid="stPopover"] > div > button {
-    margin-top: 6px; padding: 4px 8px !important;
+    margin-top: 0; padding: 4px 8px !important;
 }
 </style>
 """, unsafe_allow_html=True)

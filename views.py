@@ -329,6 +329,7 @@ _ROLE_COLOR = {
     "Infrastructure Engineer":  "#f87171",
     "Customer Service":         "#f472b6",
     "Data Analyst":             "#2dd4bf",
+    ai_support.CUSTOMER_NAME:   "#facc15",
 }
 
 _IMAGE_MIMES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"}
@@ -362,11 +363,6 @@ _SVG_CLIP  = '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 
 _SVG_IMG   = '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>'
 _SVG_USERS = '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'
 _SVG_CHAT  = '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'
-
-
-def _role_avatar(role: str) -> str:
-    parts = role.split()
-    return (parts[0][0] + parts[-1][0]).upper() if len(parts) >= 2 else role[:2].upper()
 
 
 def _fmt_size(n: int) -> str:
@@ -470,6 +466,81 @@ def _bulk_action_bar(selected_ids: list, msgs: list, current_role: str, source_l
                 st.rerun()
 
 
+def _attachment_html(att: dict) -> str:
+    if not att:
+        return ""
+    if att.get("mime", "") in _IMAGE_MIMES:
+        img_label_svg = _svg(_SVG_IMG, 11, "var(--text-5)", "margin-right:3px;")
+        return (
+            f'<div style="margin-top:7px;">'
+            f'<img src="data:{att["mime"]};base64,{att["data_b64"]}" '
+            f'style="max-width:260px;max-height:260px;border-radius:8px;'
+            f'display:block;border:1px solid rgba(var(--line-rgb),0.08);" />'
+            f'<div style="font-size:0.67rem;color:var(--text-5);margin-top:3px;">'
+            f'{img_label_svg}{att["name"]} &middot; {_fmt_size(att.get("size", 0))}'
+            f'</div></div>'
+        )
+    file_svg = _svg(_SVG_CLIP, 20, "var(--text-4)")
+    return (
+        f'<div style="margin-top:7px;background:rgba(var(--line-rgb),0.04);'
+        f'border:1px solid rgba(var(--line-rgb),0.09);border-radius:8px;'
+        f'padding:9px 13px;display:inline-flex;align-items:center;gap:10px;">'
+        f'{file_svg}'
+        f'<div>'
+        f'<div style="font-size:0.82rem;color:var(--text-2);font-weight:600;">{att["name"]}</div>'
+        f'<div style="font-size:0.69rem;color:var(--text-4);">{_fmt_size(att.get("size", 0))}</div>'
+        f'</div></div>'
+    )
+
+
+def _chat_bubble(m: dict, current_role: str, prev_from, prev_dt):
+    """One chat message as a conversation bubble: your own on the right, everyone else's on the
+    left with the sender's name above the first bubble of a run. Returns (html, this message's datetime)."""
+    mine = m["from"] == current_role
+    rc = _ROLE_COLOR.get(m["from"], "var(--text-3)")
+
+    ts = m.get("ts", "")
+    time_str = ts[11:16] if len(ts) >= 16 else ""
+    date_str = ts[:10] if len(ts) >= 10 else ""
+    time_display = time_str if date_str == datetime.now().strftime("%Y-%m-%d") else f"{date_str} {time_str}"
+
+    cur_dt = None
+    try:
+        cur_dt = datetime.fromisoformat(ts)
+    except (ValueError, TypeError):
+        pass
+    grouped = (
+        prev_from == m["from"] and prev_dt is not None and cur_dt is not None
+        and (cur_dt - prev_dt).total_seconds() < 420
+    )
+
+    if mine:
+        bg, bd = "rgba(34,211,238,0.10)", "1px solid rgba(34,211,238,0.24)"
+        radius = "16px 16px 4px 16px" if not grouped else "16px 4px 4px 16px"
+    else:
+        bg, bd = "rgba(var(--bg-overlay-rgb),0.9)", "1px solid var(--border-color)"
+        radius = "16px 16px 16px 4px" if not grouped else "4px 16px 16px 4px"
+
+    name_html = (
+        f'<div style="font-size:0.72rem;font-weight:700;color:{rc};margin:0 6px 3px;">{m["from"]}</div>'
+        if not mine and not grouped else ""
+    )
+    text_html = (
+        f'<div style="color:var(--text-2);font-size:0.87rem;line-height:1.5;'
+        f'word-break:break-word;white-space:pre-wrap;">{m["text"]}</div>'
+        if m.get("text") else ""
+    )
+    return (
+        f'<div style="display:flex;flex-direction:column;align-items:{"flex-end" if mine else "flex-start"};'
+        f'margin-top:{"2px" if grouped else "12px"};">'
+        f'{name_html}'
+        f'<div style="max-width:72%;min-width:0;background:{bg};border:{bd};border-radius:{radius};'
+        f'padding:8px 13px;">{text_html}{_attachment_html(m.get("attachment"))}</div>'
+        f'<div style="font-size:0.63rem;color:var(--text-5);margin:3px 6px 0;">{time_display}</div>'
+        f'</div>'
+    ), cur_dt
+
+
 def _channel_msg_display(current_role: str):
     """Non-fragment display: reads messages from session_state, renders header + bubbles.
     Only called during full app reruns so images never blink from polling."""
@@ -535,74 +606,11 @@ def _channel_msg_display(current_role: str):
 
         prev_from, prev_dt = None, None
         for m in msgs[-100:]:
-            rc       = _ROLE_COLOR.get(m["from"], "var(--text-3)")
-            initials = _role_avatar(m["from"])
+            bubble_html, cur_dt = _chat_bubble(m, current_role, prev_from, prev_dt)
 
-            ts = m.get("ts", "")
-            now_date     = datetime.now().strftime("%Y-%m-%d")
-            time_str     = ts[11:16] if len(ts) >= 16 else ""
-            date_str     = ts[:10]   if len(ts) >= 10 else ""
-            time_display = time_str  if date_str == now_date else f"{date_str} {time_str}"
-
-            att_html = ""
-            att = m.get("attachment")
-            if att:
-                if att.get("mime", "") in _IMAGE_MIMES:
-                    img_label_svg = _svg(_SVG_IMG, 11, "var(--text-5)", "margin-right:3px;")
-                    att_html = (
-                        f'<div style="margin-top:7px;">'
-                        f'<img src="data:{att["mime"]};base64,{att["data_b64"]}" '
-                        f'style="max-width:260px;max-height:260px;border-radius:8px;'
-                        f'display:block;border:1px solid rgba(var(--line-rgb),0.08);" />'
-                        f'<div style="font-size:0.67rem;color:var(--text-5);margin-top:3px;">'
-                        f'{img_label_svg}{att["name"]} &middot; {_fmt_size(att.get("size", 0))}'
-                        f'</div></div>'
-                    )
-                else:
-                    file_svg = _svg(_SVG_CLIP, 20, "var(--text-4)")
-                    att_html = (
-                        f'<div style="margin-top:7px;background:rgba(var(--line-rgb),0.04);'
-                        f'border:1px solid rgba(var(--line-rgb),0.09);border-radius:8px;'
-                        f'padding:9px 13px;display:inline-flex;align-items:center;gap:10px;">'
-                        f'{file_svg}'
-                        f'<div>'
-                        f'<div style="font-size:0.82rem;color:var(--text-2);font-weight:600;">{att["name"]}</div>'
-                        f'<div style="font-size:0.69rem;color:var(--text-4);">{_fmt_size(att.get("size", 0))}</div>'
-                        f'</div></div>'
-                    )
-
-            text_html = f'<div class="dc-text">{m["text"]}</div>' if m.get("text") else ""
-
-            cur_dt = None
-            try:
-                cur_dt = datetime.fromisoformat(ts)
-            except (ValueError, TypeError):
-                pass
-
-            is_grouped = (
-                prev_from == m["from"] and prev_dt is not None and cur_dt is not None
-                and (cur_dt - prev_dt).total_seconds() < 420
+            row_chk, row_body, row_menu = st.columns(
+                [0.6, 11, 0.7], gap="small", vertical_alignment="center",
             )
-
-            if is_grouped:
-                bubble_html = (
-                    f'<div class="dc-row">'
-                    f'<div class="dc-avatar-spacer"><span class="dc-hover-ts">{time_display}</span></div>'
-                    f'<div class="dc-body">{text_html}{att_html}</div>'
-                    f'</div>'
-                )
-            else:
-                bubble_html = (
-                    f'<div class="dc-row dc-first">'
-                    f'<div class="dc-avatar" style="background:{rc}1a;border:2px solid {rc};color:{rc};">{initials}</div>'
-                    f'<div class="dc-body">'
-                    f'<div class="dc-header"><span class="dc-username" style="color:{rc};">{m["from"]}</span>'
-                    f'<span class="dc-time">{time_display}</span></div>'
-                    f'{text_html}{att_html}'
-                    f'</div></div>'
-                )
-
-            row_chk, row_body, row_menu = st.columns([0.6, 11, 0.7], gap="small")
             with row_chk:
                 st.checkbox(
                     "Select", key=f"ch_sel_{sel_gen}_{sel_id}_{m['id']}",
@@ -2938,37 +2946,13 @@ def _dm_msg_display(current_role: str):
                 'No messages yet — say hello below.</div>',
                 unsafe_allow_html=True,
             )
+        prev_from, prev_dt = None, None
         for m in msgs[-60:]:
-            is_mine  = m["from"] == current_role
-            mrc      = _ROLE_COLOR.get(m["from"], "var(--text-3)")
-            initials = _role_avatar(m["from"])
-            flex_dir = "row-reverse" if is_mine else "row"
-            br       = "12px 4px 12px 12px" if is_mine else "4px 12px 12px 12px"
-            bg       = "rgba(34,211,238,0.07)" if is_mine else "rgba(var(--bg-overlay-rgb),0.9)"
-            bd       = "1px solid rgba(34,211,238,0.18)" if is_mine else "1px solid var(--border-color)"
-            ts       = m.get("ts", "")
-            now_date = datetime.now().strftime("%Y-%m-%d")
-            time_str = ts[11:16] if len(ts) >= 16 else ""
-            date_str = ts[:10]   if len(ts) >= 10 else ""
-            time_display = time_str if date_str == now_date else f"{date_str} {time_str}"
-            ta = "right" if is_mine else "left"
-            bubble_html = (
-                f'<div style="display:flex;flex-direction:{flex_dir};align-items:flex-start;'
-                f'gap:8px;max-width:100%;">'
-                f'<div style="flex-shrink:0;width:32px;height:32px;border-radius:50%;'
-                f'background:{mrc}1a;border:2px solid {mrc};display:flex;align-items:center;'
-                f'justify-content:center;font-size:0.58rem;font-weight:800;color:{mrc};">{initials}</div>'
-                f'<div style="flex:1;min-width:0;">'
-                f'<div style="font-size:0.7rem;font-weight:700;color:{mrc};'
-                f'margin-bottom:3px;text-align:{ta};">'
-                f'{m["from"]} <span style="color:var(--text-5);font-weight:400;font-size:0.67rem;">'
-                f'{time_display}</span></div>'
-                f'<div style="background:{bg};border:{bd};border-radius:{br};padding:8px 12px;">'
-                f'<div style="color:var(--text-2);font-size:0.84rem;line-height:1.55;word-break:break-word;">'
-                f'{m.get("text", "")}</div></div></div></div>'
-            )
+            bubble_html, cur_dt = _chat_bubble(m, current_role, prev_from, prev_dt)
 
-            row_chk, row_body, row_menu = st.columns([0.6, 11, 0.7], gap="small")
+            row_chk, row_body, row_menu = st.columns(
+                [0.6, 11, 0.7], gap="small", vertical_alignment="center",
+            )
             with row_chk:
                 st.checkbox(
                     "Select", key=f"dm_sel_{sel_gen}_{current_role}_{sel}_{m['id']}",
@@ -2978,6 +2962,8 @@ def _dm_msg_display(current_role: str):
                 st.markdown(bubble_html, unsafe_allow_html=True)
             with row_menu:
                 _message_action_menu(m, current_role, f"DM with {sel}", "dm", _delete_dm, f"dm_reply_{current_role}_{sel}")
+
+            prev_from, prev_dt = m["from"], cur_dt
 
     selected_ids = [
         m["id"] for m in msgs[-60:]
