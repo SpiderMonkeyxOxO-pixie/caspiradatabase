@@ -497,7 +497,7 @@ def _chat_bubble(m: dict, current_role: str, prev_from, prev_dt):
     """One chat message as a conversation bubble: your own on the right, everyone else's on the
     left with the sender's name above the first bubble of a run. Returns (html, this message's datetime)."""
     mine = m["from"] == current_role
-    rc = _ROLE_COLOR.get(m["from"], "var(--text-3)")
+    rc = _ROLE_COLOR.get(m["from"]) or ("#facc15" if ai_support.is_customer(m["from"]) else "var(--text-3)")
 
     ts = m.get("ts", "")
     time_str = ts[11:16] if len(ts) >= 16 else ""

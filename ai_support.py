@@ -4,8 +4,9 @@ When someone sends a message, an AI replies in character after ~10 seconds. The 
 generated and posted from a background thread so the UI never blocks; the existing
 2-second message pollers pick it up.
 
-  Channels  → "Customers": a client of the company who asks the team questions, always in
-              Mandarin Chinese, so the team can practise serving customers.
+  Channels  → a customer of one of the Malaysian client companies (shown as e.g. "Autofix
+              Customer Tan Wei Ming") who raises specific concerns about their own servers,
+              always in Mandarin Chinese, so the team can practise serving customers.
   DMs       → the DM partner's role answers as a coworker, in the language it was written in.
 
 Models are tried in order — PRIMARY_MODELS (the three main ones) then FALLBACK_MODELS —
@@ -26,6 +27,7 @@ import httpx
 import streamlit as st
 
 import store
+import telemetry as tm
 
 REPLY_DELAY_S = (8, 12)          # "about 10 seconds"
 CUSTOMER_NAME = "Customers"      # sender name shown for the simulated customer in channels
@@ -71,6 +73,62 @@ _ROLE_DESC = {
 }
 
 
+# ── customer identities ──────────────────────────────────────────────────────
+# Each customer is a named person at one of the Malaysian client companies, shown as e.g.
+# "Autofix Customer Tan Wei Ming". Identity is derived from that label, so a follow-up reply
+# keeps the same person, company and servers as the question that started the conversation.
+
+_MALAYSIAN_NAMES = [
+    "Tan Wei Ming", "Lim Mei Ling", "Lee Jia Hui", "Wong Kah Yee", "Chong Wei Jie", "Ng Siew Lan",
+    "Goh Chee Keong", "Teoh Li Ying", "Chan Kok Leong", "Ong Hui Min", "Yap Zhi Hao", "Low Pei Shan",
+    "Ahmad Faiz", "Nur Aisyah", "Muhammad Hakim", "Siti Aminah", "Kumar Rajan", "Priya Nair",
+]
+_CUSTOMER_TITLES = [
+    "IT Executive", "Operations Manager", "Finance Executive", "Branch Manager",
+    "Systems Administrator", "Head of Customer Service", "Warehouse Supervisor", "Project Coordinator",
+]
+
+
+def is_customer(name: str) -> bool:
+    """True for simulated customers ("Autofix Customer Tan Wei Ming"); False for team roles."""
+    return name == CUSTOMER_NAME or bool(re.match(r"^\S+ Customer \S", name or ""))
+
+
+def _client_short(client: dict) -> str:
+    return client["name"].split()[0]                      # "Autofix Sdn Bhd" → "Autofix"
+
+
+def _customer_clients() -> list:
+    my = [c for c in tm.CLIENTS if "Malaysia" in c["hq"]]     # Malaysian names → Malaysian companies
+    return my or list(tm.CLIENTS)
+
+
+def _make_identity(client: dict, person: str) -> dict:
+    rng = random.Random(f"{client['code']}|{person}")           # stable per person
+    fleet = tm.build_fleet(client)
+    return {
+        "label": f"{_client_short(client)} Customer {person}",
+        "person": person,
+        "title": rng.choice(_CUSTOMER_TITLES),
+        "client": client,
+        "servers": rng.sample(fleet, k=min(3, len(fleet))),
+    }
+
+
+def _new_customer() -> dict:
+    return _make_identity(random.choice(_customer_clients()), random.choice(_MALAYSIAN_NAMES))
+
+
+def _customer_identity(history: list) -> dict:
+    """Identity of the customer who spoke last in `history`, else a new one."""
+    for h in reversed(history):
+        label = h.get("from", "")
+        for client in _customer_clients():
+            prefix = f"{_client_short(client)} Customer "
+            if label.startswith(prefix) and len(label) > len(prefix):
+                return _make_identity(client, label[len(prefix):])
+    return _new_customer()
+
 
 # ── configuration (resolved on the main thread, passed into the worker) ──────
 
@@ -97,14 +155,21 @@ def _model_chain() -> list:
 
 # ── prompts ──────────────────────────────────────────────────────────────────
 
-def _customer_prompt(sender: str, where: str) -> str:
+def _customer_prompt(sender: str, where: str, ident: dict) -> str:
+    c = ident["client"]
+    servers = "; ".join(f"{s['name']} ({s['engine']} {s['role'].lower()}, {s['hostname']})" for s in ident["servers"])
     return (
-        "You are a customer — a staff member at a client company that pays Caspira for managed database "
-        "monitoring (uptime, backups, performance, alerts, maintenance, security, reports, billing). "
+        f"You are {ident['person']}, {ident['title']} at {c['name']} ({c['industry']}, based in {c['hq']}). "
+        "Your company pays Caspira for managed database monitoring (uptime, backups, performance, alerts, "
+        f"maintenance, security, reports, billing). Caspira runs your databases, including: {servers}. "
         f"You are chatting with Caspira's support team in {where}. "
         + (f'The person answering you is their "{sender}". ' if sender else "Whoever is on duty will answer you. ")
-        + "Play the customer realistically so the team can practise serving customers.\n\n"
+        + "Play this customer realistically so the team can practise serving customers.\n\n"
         "Rules:\n"
+        "- Be SPECIFIC, like a real person with a real problem. Tie every concern to your own business "
+        f"({c['industry']}) and name your actual system: use one of the server names above, say what you "
+        "saw (a time, an error message, a number, a report that looks wrong) and what it stops your staff "
+        "from doing. Never ask vague, generic questions like \"is everything ok?\".\n"
         "- LANGUAGE: always write in Mandarin Chinese, whatever language the team member uses — the team "
         "cannot read English. Write Simplified Chinese (简体中文) by default; only if the team member writes in "
         "Traditional characters, switch to Traditional. "
@@ -124,8 +189,6 @@ def _customer_prompt(sender: str, where: str) -> str:
 
 
 def _system_prompt(persona: str, sender: str, where: str) -> str:
-    if persona == CUSTOMER_NAME:
-        return _customer_prompt(sender, where)
     return (
         f'You are the "{persona}" on a small managed-services team at Caspira, which runs and monitors '
         f"database servers for client companies. In your role you {_ROLE_DESC.get(persona, 'support the team')}.\n"
@@ -149,16 +212,18 @@ def _system_prompt(persona: str, sender: str, where: str) -> str:
     )
 
 
-def _build_messages(persona: str, sender: str, where: str, history: list, text: str) -> list:
-    msgs = [{"role": "system", "content": _system_prompt(persona, sender, where)}]
+def _build_messages(persona: str, sender: str, where: str, history: list, text: str, ident: dict = None) -> list:
+    system = _customer_prompt(sender, where, ident) if ident else _system_prompt(persona, sender, where)
+    msgs = [{"role": "system", "content": system}]
     for h in history[-_HISTORY_TURNS:]:
         body = (h.get("text") or "").strip()
         if not body:
             continue
         who = h.get("from", "")
+        mine = who == persona or (ident is not None and is_customer(who))   # earlier customer lines = "me"
         msgs.append({
-            "role": "assistant" if who == persona else "user",
-            "content": body if who == persona else f"{who}: {body}",
+            "role": "assistant" if mine else "user",
+            "content": body if mine else f"{who}: {body}",
         })
     msgs.append({"role": "user", "content": f"{sender}: {text}"})
     return msgs
@@ -225,7 +290,7 @@ def _is_usable(text: str, persona: str) -> bool:
     """False for leaked reasoning, or for a customer reply that isn't Chinese."""
     if _LEAK.search(text):
         return False
-    if persona == CUSTOMER_NAME:
+    if is_customer(persona):
         letters = re.sub(r"[\s\W\d_]+", "", text)
         if len(_CJK.findall(text)) < max(4, int(0.5 * len(letters))):
             return False
@@ -263,16 +328,18 @@ def schedule_reply(kind: str, target: str, sender: str, text: str, history: list
         return
     models = _model_chain()
 
+    ident = None
     if kind == "dm":
         persona, where = target, f"a direct message with the {sender}"
         if persona == sender:
             return
     else:
-        persona = CUSTOMER_NAME
+        ident = _customer_identity(history)          # same customer who asked the question
+        persona = ident["label"]
         ch = next((c for c in store.CHANNELS if c["id"] == target), None)
         where = f"the {ch['name']} channel ({ch['desc']})" if ch else "a support channel"
 
-    messages = _build_messages(persona, sender, where, history, text)
+    messages = _build_messages(persona, sender, where, history, text, ident)
     delay = random.uniform(*REPLY_DELAY_S)
 
     def _worker() -> None:
@@ -307,21 +374,21 @@ _PRESENCE_S = 120                # "someone is watching" window after the last t
 _LOOP_TICK_S = 15
 
 
-def _opener_messages(where: str, history: list) -> list:
-    msgs = [{"role": "system", "content": _customer_prompt("", where)}]
+def _opener_messages(where: str, history: list, ident: dict) -> list:
+    msgs = [{"role": "system", "content": _customer_prompt("", where, ident)}]
     for h in history[-_HISTORY_TURNS:]:
         body = (h.get("text") or "").strip()
         if not body:
             continue
         who = h.get("from", "")
         msgs.append({
-            "role": "assistant" if who == CUSTOMER_NAME else "user",
-            "content": body if who == CUSTOMER_NAME else f"{who}: {body}",
+            "role": "assistant" if is_customer(who) else "user",
+            "content": body if is_customer(who) else f"{who}: {body}",
         })
     msgs.append({
         "role": "user",
-        "content": "[Start a new question now: write the customer's next message to the support team. "
-                   "Choose a topic that has not come up yet in this conversation.]",
+        "content": "[Start now: write your first message to the support team about one specific problem or "
+                   "question of yours. Choose a topic that has not come up yet in this conversation.]",
     })
     return msgs
 
@@ -348,15 +415,16 @@ def _customer_loop(state: dict, key: str, models: list, channels: list, cap: int
                 continue
             for ch_id in channels:
                 msgs = store.bg_recent_channel_messages(ch_id, 12)
-                if msgs and msgs[-1]["from"] == CUSTOMER_NAME:
+                if msgs and is_customer(msgs[-1]["from"]):
                     continue                                # a question is still waiting for an answer
                 if _idle_seconds(msgs) < state["gap"]:
                     continue
                 ch = next((c for c in store.CHANNELS if c["id"] == ch_id), None)
                 where = f"the {ch['name']} channel ({ch['desc']})" if ch else "a support channel"
-                reply = _generate(CUSTOMER_NAME, _opener_messages(where, msgs), key, models)
+                ident = _new_customer()
+                reply = _generate(ident["label"], _opener_messages(where, msgs, ident), key, models)
                 if reply:
-                    store.bg_post_channel(CUSTOMER_NAME, ch_id, reply)
+                    store.bg_post_channel(ident["label"], ch_id, reply)
                     state["count"] += 1
                     state["gap"] = random.uniform(*_QUIET_GAP_S)
                     break                                   # one new question per tick
