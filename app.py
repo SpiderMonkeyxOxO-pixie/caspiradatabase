@@ -10,6 +10,7 @@ Run with:  streamlit run app.py
 import base64
 import random
 import time
+import uuid
 from pathlib import Path
 
 import pandas as pd
@@ -528,12 +529,23 @@ ACCOUNT_PASSWORD = "@Tiger112211"
 
 if "auth_user" not in st.session_state:
     st.session_state.auth_user = None
+if "session_id" not in st.session_state:
+    st.session_state.session_id = uuid.uuid4().hex
+
+# A page refresh starts a fresh Streamlit session: resume the previous sign-in if its lock is still alive.
+if st.session_state.auth_user is None:
+    _acct, _sid = st.query_params.get("a"), st.query_params.get("s")
+    if _acct in ACCOUNTS and _sid and store.touch_session(_acct, _sid):
+        st.session_state.auth_user, st.session_state.session_id = _acct, _sid
 
 if st.session_state.auth_user is None:
     _, login_col, _ = st.columns([1, 1.4, 1])
     with login_col:
         st.write("")
         st.write("")
+        _why = st.session_state.pop("logout_reason", None)
+        if _why:
+            st.warning(_why)
         st.markdown(
             f"""
             <div class="login-brand">
@@ -551,8 +563,16 @@ if st.session_state.auth_user is None:
             submitted = st.form_submit_button("Sign in", icon=":material/login:", width="stretch", type="primary")
             if submitted:
                 if password == ACCOUNT_PASSWORD:
-                    st.session_state.auth_user = username
-                    st.rerun()
+                    if store.claim_session(username, st.session_state.session_id):
+                        st.session_state.auth_user = username
+                        st.query_params["a"] = username            # lets a page refresh resume this sign-in
+                        st.query_params["s"] = st.session_state.session_id
+                        st.rerun()
+                    else:
+                        st.error(
+                            f"**{username}** is already signed in by someone else. Ask them to sign out — or, "
+                            "if they closed their browser, try again in about 3 minutes."
+                        )
                 else:
                     st.error("Incorrect password for this account. Check with your team lead and try again.")
 
@@ -566,6 +586,23 @@ if st.session_state.auth_user is None:
             unsafe_allow_html=True,
         )
     st.stop()
+
+
+@st.fragment(run_every=30)
+def _session_heartbeat():
+    """Keeps this account's lock alive while the tab is open. If the lock was lost (long disconnect,
+    or the account was taken over after it expired) the user is signed out."""
+    if st.session_state.auth_user is None:
+        return
+    if not store.touch_session(st.session_state.auth_user, st.session_state.session_id):
+        st.session_state.auth_user = None
+        st.session_state.logout_reason = "You were signed out: your session expired or this account was opened elsewhere."
+        st.query_params.clear()
+        st.rerun()
+
+
+_session_heartbeat()
+
 
 @st.dialog("About this console")
 def about_dialog():
@@ -778,7 +815,10 @@ with st.sidebar:
             report_issue_dialog()
         st.divider()
         if st.button("Sign out", icon=":material/logout:", width="stretch", type="tertiary"):
+            store.release_session(st.session_state.auth_user, st.session_state.session_id)
             st.session_state.auth_user = None
+            st.session_state.session_id = uuid.uuid4().hex
+            st.query_params.clear()
             st.rerun()
         st.divider()
         st.caption(f"Build: {tm.PROVIDER} console &middot; v1.0".replace("&middot;", "·"))

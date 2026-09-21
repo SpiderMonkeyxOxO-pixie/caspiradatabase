@@ -55,6 +55,43 @@ def _sb() -> Client:
     return st.session_state.sb_client
 
 
+# ── one live session per console account ─────────────────────────────────────
+# Backed by public.account_sessions + three RPCs. A lock stays alive while the open browser tab
+# sends heartbeats; if the tab is closed, the account frees itself after SESSION_TTL_S seconds.
+# If the database is unreachable these fail open — an outage must not lock everyone out.
+
+SESSION_TTL_S = 180
+
+
+def claim_session(account: str, session_id: str) -> bool:
+    """Take `account` for this session. False if someone else is currently signed in with it."""
+    try:
+        res = _sb().rpc("claim_account_session", {
+            "p_account": account, "p_session": session_id, "p_ttl": SESSION_TTL_S,
+        }).execute()
+        return bool(res.data)
+    except Exception:
+        return True
+
+
+def touch_session(account: str, session_id: str) -> bool:
+    """Heartbeat. False if this session no longer holds a live lock on `account`."""
+    try:
+        res = _sb().rpc("touch_account_session", {
+            "p_account": account, "p_session": session_id, "p_ttl": SESSION_TTL_S,
+        }).execute()
+        return bool(res.data)
+    except Exception:
+        return True
+
+
+def release_session(account: str, session_id: str) -> None:
+    try:
+        _sb().rpc("release_account_session", {"p_account": account, "p_session": session_id}).execute()
+    except Exception:
+        pass
+
+
 # ── column-name translators (DB → Python dict) ───────────────────────────────
 
 def _norm_msg(row: dict) -> dict:
