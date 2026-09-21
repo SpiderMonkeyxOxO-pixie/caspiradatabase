@@ -637,6 +637,7 @@ def _channel_msg_display(current_role: str):
 def _channel_msg_poller(current_role: str):
     """Silent polling fragment — detects new messages and triggers a full rerun.
     Renders nothing visible so images in _channel_msg_display never blink."""
+    ai_support.touch()                      # someone is watching → customers may open conversations
     sel_id = st.session_state.get("ch_selected", store.CHANNELS[0]["id"])
     msgs = store.get_channel_messages(sel_id)
     sig = str([(m.get("ts", ""), bool(m.get("attachment"))) for m in msgs])

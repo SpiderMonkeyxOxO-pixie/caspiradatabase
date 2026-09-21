@@ -307,6 +307,20 @@ def bg_post_channel(role: str, channel_id: str, text: str) -> None:
     }).execute()
 
 
+def bg_recent_channel_messages(channel_id: str, limit: int = 12) -> list:
+    """Latest `limit` messages of a channel, oldest first, for background threads (no st.* calls)."""
+    res = (
+        create_client(_SUPABASE_URL, _SUPABASE_KEY)
+        .table("channel_messages")
+        .select("from_role, text, ts")
+        .eq("channel_id", channel_id)
+        .order("ts", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return [{"from": r["from_role"], "text": r["text"], "ts": r["ts"]} for r in reversed(res.data or [])]
+
+
 def bg_send_dm(from_role: str, to_role: str, text: str) -> None:
     """Send a DM from a background thread — no Streamlit session state, no st.* calls."""
     create_client(_SUPABASE_URL, _SUPABASE_KEY).table("messages").insert({

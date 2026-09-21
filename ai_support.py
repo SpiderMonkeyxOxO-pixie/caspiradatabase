@@ -20,6 +20,7 @@ import random
 import re
 import threading
 import time
+from datetime import date, datetime
 
 import httpx
 import streamlit as st
@@ -100,11 +101,13 @@ def _customer_prompt(sender: str, where: str) -> str:
     return (
         "You are a customer — a staff member at a client company that pays Caspira for managed database "
         "monitoring (uptime, backups, performance, alerts, maintenance, security, reports, billing). "
-        f"You are chatting with Caspira's support team in {where}. The person answering you is their "
-        f'"{sender}". Play the customer realistically so the team can practise serving customers.\n\n'
+        f"You are chatting with Caspira's support team in {where}. "
+        + (f'The person answering you is their "{sender}". ' if sender else "Whoever is on duty will answer you. ")
+        + "Play the customer realistically so the team can practise serving customers.\n\n"
         "Rules:\n"
         "- LANGUAGE: always write in Mandarin Chinese, whatever language the team member uses — the team "
-        "cannot read English. Use Simplified Chinese unless they write in Traditional, then use Traditional. "
+        "cannot read English. Write Simplified Chinese (简体中文) by default; only if the team member writes in "
+        "Traditional characters, switch to Traditional. "
         "Keep common terms such as DB, SLA, backup as-is. Natural, everyday business Chinese.\n"
         "- 1–3 short sentences, like a chat message. No markdown, no lists, no emojis, no sign-off.\n"
         "- You ask a lot of questions. Most of your messages should contain a new, concrete question or "
@@ -288,3 +291,95 @@ def schedule_reply(kind: str, target: str, sender: str, text: str, history: list
             pass                                  # a failed AI reply must never affect the app
 
     threading.Thread(target=_worker, name="ai-teammate-reply", daemon=True).start()
+
+
+# ── customers who speak first ────────────────────────────────────────────────
+# A background loop (one per server process) posts a new customer question into the customer
+# channels when the conversation has gone quiet. Guards keep it cheap and non-spammy:
+#   • only while someone has the Channels page open (touch() is called by its 2-second poller)
+#   • never while the last message is an unanswered customer question
+#   • a random quiet gap between questions, and a daily cap (free OpenRouter keys allow ~50 requests/day)
+
+CUSTOMER_CHANNELS = ["client-updates"]
+_QUIET_GAP_S = (180, 360)        # how long a conversation must be quiet before a new question
+_DAILY_CAP = 15                  # new customer questions per day (follow-up replies are extra)
+_PRESENCE_S = 120                # "someone is watching" window after the last touch()
+_LOOP_TICK_S = 15
+
+
+def _opener_messages(where: str, history: list) -> list:
+    msgs = [{"role": "system", "content": _customer_prompt("", where)}]
+    for h in history[-_HISTORY_TURNS:]:
+        body = (h.get("text") or "").strip()
+        if not body:
+            continue
+        who = h.get("from", "")
+        msgs.append({
+            "role": "assistant" if who == CUSTOMER_NAME else "user",
+            "content": body if who == CUSTOMER_NAME else f"{who}: {body}",
+        })
+    msgs.append({
+        "role": "user",
+        "content": "[Start a new question now: write the customer's next message to the support team. "
+                   "Choose a topic that has not come up yet in this conversation.]",
+    })
+    return msgs
+
+
+def _idle_seconds(msgs: list) -> float:
+    if not msgs:
+        return float("inf")
+    try:
+        return (datetime.now() - datetime.fromisoformat(msgs[-1]["ts"])).total_seconds()
+    except (ValueError, TypeError, KeyError):
+        return 0.0
+
+
+def _customer_loop(state: dict, key: str, models: list, channels: list, cap: int) -> None:
+    while True:
+        time.sleep(_LOOP_TICK_S)
+        try:
+            if time.time() - state["last_seen"] > _PRESENCE_S:
+                continue                                    # nobody is on the Channels page
+            today = date.today().isoformat()
+            if state["day"] != today:
+                state["day"], state["count"] = today, 0
+            if state["count"] >= cap:
+                continue
+            for ch_id in channels:
+                msgs = store.bg_recent_channel_messages(ch_id, 12)
+                if msgs and msgs[-1]["from"] == CUSTOMER_NAME:
+                    continue                                # a question is still waiting for an answer
+                if _idle_seconds(msgs) < state["gap"]:
+                    continue
+                ch = next((c for c in store.CHANNELS if c["id"] == ch_id), None)
+                where = f"the {ch['name']} channel ({ch['desc']})" if ch else "a support channel"
+                reply = _generate(CUSTOMER_NAME, _opener_messages(where, msgs), key, models)
+                if reply:
+                    store.bg_post_channel(CUSTOMER_NAME, ch_id, reply)
+                    state["count"] += 1
+                    state["gap"] = random.uniform(*_QUIET_GAP_S)
+                    break                                   # one new question per tick
+        except Exception:
+            pass                                            # never let the loop die
+
+
+@st.cache_resource
+def _customer_state() -> dict:
+    """Runs once per server process: resolve config on the Streamlit thread, start the loop."""
+    key = (_secret("OPENROUTER_API_KEY") or "").strip()
+    state = {"last_seen": 0.0, "day": "", "count": 0, "gap": random.uniform(*_QUIET_GAP_S)}
+    if key:
+        channels = list(_secret("CUSTOMER_CHANNELS") or CUSTOMER_CHANNELS)
+        cap = int(_secret("CUSTOMER_DAILY_CAP") or _DAILY_CAP)
+        threading.Thread(
+            target=_customer_loop, args=(state, key, _model_chain(), channels, cap),
+            name="ai-customer-loop", daemon=True,
+        ).start()
+    return state
+
+
+def touch() -> None:
+    """Call from the Channels page's poller: marks that someone is watching and, on the first
+    call in a server process, starts the loop that lets customers open conversations."""
+    _customer_state()["last_seen"] = time.time()
