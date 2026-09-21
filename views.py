@@ -642,10 +642,14 @@ def _channel_msg_poller(current_role: str):
     """Silent polling fragment — detects new messages and triggers a full rerun.
     Renders nothing visible so images in _channel_msg_display never blink."""
     sel_id = store.channel_by_id(st.session_state.get("ch_selected", store.TEAM_CHANNELS[0]["id"]))["id"]
-    ai_support.touch(sel_id)                # someone is watching this conversation → a customer may speak first
+    ai_support.touch()                      # someone is watching → customers may speak first
     msgs = store.get_channel_messages(sel_id)
     sig = str([(m.get("ts", ""), bool(m.get("attachment"))) for m in msgs])
-    if st.session_state.get(f"ch_sig_{sel_id}") != sig:
+    counts = store.get_customer_counts()    # new messages in the other conversations → refresh the badges
+    counts_changed = counts != st.session_state.get("cust_counts")
+    if counts_changed:
+        st.session_state.cust_counts = counts
+    if counts_changed or st.session_state.get(f"ch_sig_{sel_id}") != sig:
         st.session_state[f"ch_sig_{sel_id}"] = sig
         st.session_state[f"ch_msgs_{sel_id}"] = msgs
         st.session_state[f"ch_tick_{sel_id}"] = datetime.now().strftime("%H:%M:%S")
@@ -749,11 +753,27 @@ def _channel_compose(current_role: str):
                     st.rerun()
 
 
+def _badge_css(unread: dict) -> str:
+    """CSS that puts a red count circle after the label of each button whose widget key is in
+    `unread` ({key: number of unread messages}). Buttons can't hold HTML, so the number goes in ::after."""
+    if not unread:
+        return ""
+    selectors = ",".join(f".st-key-{k} button::after" for k in unread)
+    base = (
+        f"{selectors}{{display:inline-flex;align-items:center;justify-content:center;margin-left:8px;"
+        "min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#ef4444;color:#fff;"
+        "font-size:0.68rem;font-weight:700;line-height:1;box-shadow:0 0 0 2px rgba(239,68,68,0.25);}"
+    )
+    counts = "".join(
+        f'.st-key-{k} button::after{{content:"{"99+" if n > 99 else n}";}}' for k, n in unread.items()
+    )
+    return f"<style>{base}{counts}</style>"
+
+
 def _pick_team_channel(channel_id: str, seen: int) -> None:
-    """Button callback: open a team channel and deselect any customer-account chip."""
+    """Button callback: open a team channel."""
     st.session_state.ch_selected = channel_id
     st.session_state.ch_last_seen[channel_id] = seen
-    st.session_state.ch_customer_account = None
 
 
 def render_channels(current_role: str):
@@ -773,6 +793,7 @@ def render_channels(current_role: str):
             unsafe_allow_html=True,
         )
         _summaries = store.get_channel_summaries()
+        team_unread: dict = {}
         for ch in store.TEAM_CHANNELS:
             msgs    = _summaries.get(ch["id"], [])
             unread  = max(0, len(msgs) - st.session_state.ch_last_seen.get(ch["id"], 0))
@@ -788,12 +809,6 @@ def render_channels(current_role: str):
                 trimmed = preview_text + ("…" if len(lm.get("text") or "") > 26 else "")
                 preview_line = f"{sender}: {trimmed}"
 
-            badge = (
-                f'<span style="background:#ef4444;color:#fff;border-radius:999px;'
-                f'padding:1px 6px;font-size:0.62rem;font-weight:700;margin-left:4px;">{unread}</span>'
-                if unread and not active else ""
-            )
-
             # icon + button in tight 2-col layout
             ic, btn = st.columns([1, 7], gap="small")
             with ic:
@@ -803,9 +818,10 @@ def render_channels(current_role: str):
                     unsafe_allow_html=True,
                 )
             with btn:
-                label = ch["name"] + (f" ({unread})" if unread and not active else "")
+                if unread and not active:
+                    team_unread[f"ch_btn_{ch['id']}"] = unread
                 st.button(
-                    label,
+                    ch["name"],
                     key=f"ch_btn_{ch['id']}",
                     type="primary" if active else "secondary",
                     width="stretch",
@@ -820,6 +836,8 @@ def render_channels(current_role: str):
                     f'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">{preview_line}</div>',
                     unsafe_allow_html=True,
                 )
+        if team_unread:
+            st.markdown(_badge_css(team_unread), unsafe_allow_html=True)
 
     # ── message panel + silent poller ───────────────────────────────────
     with col_msgs:
@@ -3114,11 +3132,11 @@ def render_direct_messages(current_role: str):
         _dm_compose(current_role)
 
 
-def _pick_customer_channel() -> None:
-    """Pills callback: open the chosen company's own conversation (none chosen → back to #general)."""
-    code = st.session_state.get("ch_customer_account")
+def _pick_customer_channel(code: str) -> None:
+    """Chip callback: open that company's own conversation; clicking the open one again returns to #general."""
+    cid = f"{store.CUSTOMER_PREFIX}{code}"
     st.session_state.ch_selected = (
-        f"{store.CUSTOMER_PREFIX}{code}" if code else store.TEAM_CHANNELS[0]["id"]
+        store.TEAM_CHANNELS[0]["id"] if st.session_state.get("ch_selected") == cid else cid
     )
     st.session_state.comm_view = "Channels"
 
@@ -3137,15 +3155,28 @@ def view_channels_page(*, role, **_):
             key="comm_view", label_visibility="collapsed",
         ) or "Channels"
     with col_acct:
-        clients = {c["code"]: c for c in tm.CLIENTS}
-        st.pills(
-            "Customer account", list(clients), key="ch_customer_account", selection_mode="single",
-            format_func=lambda code: clients[code]["name"].split()[0],
-            on_change=_pick_customer_channel,
-            help="Each client account has its own separate conversation with its own customer. "
-                 "Click again to go back to the team channels.",
-            label_visibility="collapsed",
-        )
+        if "ch_last_seen" not in st.session_state:
+            st.session_state.ch_last_seen = {}
+        counts = st.session_state.get("cust_counts")
+        if counts is None:
+            counts = st.session_state.cust_counts = store.get_customer_counts()
+        selected = st.session_state.get("ch_selected")
+        chip_unread: dict = {}
+        with st.container(horizontal=True, gap="small", key="cust_chips"):
+            for c in tm.CLIENTS:
+                cid = f"{store.CUSTOMER_PREFIX}{c['code']}"
+                key = f"cust_chip_{c['code']}"
+                active = selected == cid
+                unread = max(0, counts.get(cid, 0) - st.session_state.ch_last_seen.get(cid, 0))
+                if unread and not active:
+                    chip_unread[key] = unread
+                st.button(
+                    c["name"].split()[0], key=key, type="primary" if active else "secondary",
+                    on_click=_pick_customer_channel, args=(c["code"],),
+                    help=f"{c['name']} — {c['industry']}. Its own separate conversation; click again to go back.",
+                )
+        if chip_unread:
+            st.markdown(_badge_css(chip_unread), unsafe_allow_html=True)
 
     if view == "Direct Messages":
         render_direct_messages(role)

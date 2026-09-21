@@ -406,15 +406,16 @@ def _customer_where(channel_id: str) -> str:
 
 
 # ── customers who speak first ────────────────────────────────────────────────
-# A background loop (one per server process) posts a new customer question into a customer
-# conversation when it is quiet. Guards keep it cheap and non-spammy:
-#   • only in a customer conversation someone is looking at right now (touch() is called by the
-#     open channel's 2-second poller) — the other companies' conversations stay untouched
+# A background loop (one per server process) posts a new customer question into each company's
+# conversation when it is quiet, so every account has its own live conversation and the unread
+# badges show where something new arrived. Guards keep it cheap and non-spammy:
+#   • only while someone has the Channels page open (touch() is called by its 2-second poller)
+#   • one new question per 15-second tick, so the 11 companies start up one after another
 #   • never while the last message is an unanswered customer question
 #   • a random quiet gap between questions, and a daily cap (free OpenRouter keys allow ~50 requests/day)
 
 _QUIET_GAP_S = (180, 360)        # how long a conversation must be quiet before a new question
-_DAILY_CAP = 25                  # new customer questions per day (follow-up replies are extra)
+_DAILY_CAP = 30                  # new customer questions per day (follow-up replies are extra)
 _PRESENCE_S = 120                # "someone is watching" window after the last touch()
 _LOOP_TICK_S = 15
 
@@ -451,17 +452,16 @@ def _customer_loop(state: dict, key: str, models: list, cap: int) -> None:
     while True:
         time.sleep(_LOOP_TICK_S)
         try:
-            now = time.time()
-            watched = [cid for cid, seen in list(state["watching"].items())
-                       if now - seen <= _PRESENCE_S and store.is_customer_channel(cid)]
-            if not watched:
-                continue                                    # nobody is looking at a customer conversation
+            if time.time() - state["last_seen"] > _PRESENCE_S:
+                continue                                    # nobody has the Channels page open
             today = date.today().isoformat()
             if state["day"] != today:
                 state["day"], state["count"] = today, 0
             if state["count"] >= cap:
                 continue
-            for ch_id in watched:
+            order = [c["id"] for c in store.CUSTOMER_CHANNELS]
+            random.shuffle(order)
+            for ch_id in order:
                 msgs = store.bg_recent_channel_messages(ch_id, 12)
                 if msgs and is_customer(msgs[-1]["from"]):
                     continue                                # a question is still waiting for an answer
@@ -485,7 +485,7 @@ def _customer_loop(state: dict, key: str, models: list, cap: int) -> None:
 def _customer_state() -> dict:
     """Runs once per server process: resolve config on the Streamlit thread, start the loop."""
     key = (_secret("OPENROUTER_API_KEY") or "").strip()
-    state = {"watching": {}, "day": "", "count": 0, "gap": random.uniform(*_QUIET_GAP_S)}
+    state = {"last_seen": 0.0, "day": "", "count": 0, "gap": random.uniform(*_QUIET_GAP_S)}
     if key:
         cap = int(_secret("CUSTOMER_DAILY_CAP") or _DAILY_CAP)
         threading.Thread(
@@ -495,7 +495,7 @@ def _customer_state() -> dict:
     return state
 
 
-def touch(channel_id: str) -> None:
-    """Call from the open channel's poller: records that someone is looking at `channel_id` and, on the
-    first call in a server process, starts the loop that lets customers open conversations."""
-    _customer_state()["watching"][channel_id] = time.time()
+def touch() -> None:
+    """Call from the Channels page's poller: records that someone is watching and, on the first call
+    in a server process, starts the loop that lets customers open conversations."""
+    _customer_state()["last_seen"] = time.time()

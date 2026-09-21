@@ -366,6 +366,21 @@ def bg_post_channel(role: str, channel_id: str, text: str) -> None:
     }).execute()
 
 
+def get_customer_counts() -> dict:
+    """{customer channel id: number of messages} — one light query, used for the unread badges."""
+    try:
+        res = (
+            _sb().table("channel_messages").select("channel_id")
+            .like("channel_id", f"{CUSTOMER_PREFIX}%").limit(5000).execute()
+        )
+    except Exception:
+        return {}
+    counts: dict = {}
+    for r in res.data or []:
+        counts[r["channel_id"]] = counts.get(r["channel_id"], 0) + 1
+    return counts
+
+
 def bg_recent_channel_messages(channel_id: str, limit: int = 12) -> list:
     """Latest `limit` messages of a channel, oldest first, for background threads (no st.* calls)."""
     res = (
