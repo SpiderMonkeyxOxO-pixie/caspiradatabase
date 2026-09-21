@@ -204,6 +204,31 @@ def _clean(text: str, persona: str) -> str:
     return html.escape(text)
 
 
+# Some free models write their reasoning / a paraphrase of the instructions into the reply
+# ("We need to respond as the customer... no markdown ..."). Never post that.
+_LEAK = re.compile(
+    r"\b(we|i) (need|must|should|have) to (respond|reply|answer|write|output)\b[^.\n]{0,60}"
+    r"\b(as (the|a)|in (chinese|mandarin|english)|customer|user|persona)\b"
+    r"|\bno markdown\b|\bsign-?off\b|\bshort sentences\b|\bno emojis?\b|\bno name prefix\b|\bin character\b"
+    r"|\bthe (user|customer|team member|colleague) (says|said|wants|asks|asked|is asking|just said|wrote)\b"
+    r"|\bsystem prompt\b|\bpersona\b"
+    r"|^\s*(let me think|let's (think|see|craft|draft|respond)|first, (we|i))\b",
+    re.IGNORECASE,
+)
+_CJK = re.compile(r"[㐀-鿿]")
+
+
+def _is_usable(text: str, persona: str) -> bool:
+    """False for leaked reasoning, or for a customer reply that isn't Chinese."""
+    if _LEAK.search(text):
+        return False
+    if persona == CUSTOMER_NAME:
+        letters = re.sub(r"[\s\W\d_]+", "", text)
+        if len(_CJK.findall(text)) < max(4, int(0.5 * len(letters))):
+            return False
+    return True
+
+
 def _generate(persona: str, messages: list, key: str, models: list):
     deadline = time.monotonic() + _TOTAL_BUDGET_S
     for model in models:
@@ -213,7 +238,7 @@ def _generate(persona: str, messages: list, key: str, models: list):
         text, fatal = _call(model, messages, key, min(_PER_MODEL_TIMEOUT_S, remaining))
         if fatal:
             break
-        if text:
+        if text and _is_usable(text, persona):
             reply = _clean(text, persona)
             if reply:
                 return reply
