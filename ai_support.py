@@ -310,10 +310,11 @@ def _customer_prompt(sender: str, where: str, ident: dict) -> str:
         f"({c['industry']}) and name your actual system: use one of the server names above, say what you "
         "saw (a time, an error message, a number, a report that looks wrong) and what it stops your staff "
         "from doing. Never ask vague, generic questions like \"is everything ok?\".\n"
-        "- LANGUAGE: always write in Mandarin Chinese, whatever language the team member uses — the team "
-        "cannot read English. Write Simplified Chinese (简体中文) by default; only if the team member writes in "
-        "Traditional characters, switch to Traditional. "
-        "Keep common terms such as DB, SLA, backup as-is. Natural, everyday business Chinese.\n"
+        "- LANGUAGE: reply in the same language the team member's latest message was written in. They write "
+        "English → you reply in English. They write Chinese (Mandarin) → you reply in Mandarin, matching "
+        "Simplified or Traditional to what they used (default Simplified if nothing has been written yet, since "
+        "you are starting the conversation). Keep common terms such as DB, SLA, backup as-is. Natural, "
+        "everyday business language either way — not a translation.\n"
         "- 1–3 short sentences, like a chat message. No markdown, no lists, no emojis, no sign-off.\n"
         "- You ask a lot of questions. Most of your messages should contain a new, concrete question or "
         "request (e.g. why the system was slow this morning, when the last backup ran, whether data can be "
@@ -446,19 +447,27 @@ _LEAK = re.compile(
 _CJK = re.compile(r"[㐀-鿿]")
 
 
-def _is_usable(text: str, persona: str) -> bool:
-    """False for leaked reasoning, or for a customer reply that isn't Chinese."""
+def _detect_lang(text: str) -> str:
+    """'zh' if `text` is mostly Chinese characters, else 'en'. 'zh' when there is nothing to judge
+    (e.g. no message has been written yet), since a customer opener defaults to Chinese."""
+    letters = re.sub(r"[\s\W\d_]+", "", text or "")
+    if not letters:
+        return "zh"
+    return "zh" if len(_CJK.findall(text)) >= 0.4 * len(letters) else "en"
+
+
+def _is_usable(text: str, persona: str, expect_lang: str = None) -> bool:
+    """False for leaked reasoning, or for a customer reply in the wrong language."""
     if _LEAK.search(text):
         return False
-    if is_customer(persona):
-        letters = re.sub(r"[\s\W\d_]+", "", text)
-        if len(_CJK.findall(text)) < max(4, int(0.5 * len(letters))):
-            return False
+    if is_customer(persona) and expect_lang and _detect_lang(text) != expect_lang:
+        return False
     return True
 
 
-def _generate(persona: str, messages: list, key: str, cfg: tuple):
-    """First usable reply from the model chain, or None (all busy, or the daily allowance is used up)."""
+def _generate(persona: str, messages: list, key: str, cfg: tuple, expect_lang: str = None):
+    """First usable reply from the model chain, or None (all busy, or the daily allowance is used up).
+    `expect_lang` ('zh'/'en'), for a customer reply, is the language it must be written in."""
     if time.time() < _limit_until:
         return None
     models = _model_chain(cfg)                   # may fetch the free-model list (cached 6 h)
@@ -470,7 +479,7 @@ def _generate(persona: str, messages: list, key: str, cfg: tuple):
         text, fatal = _call(model, messages, key, min(_PER_MODEL_TIMEOUT_S, remaining))
         if fatal:
             break
-        if text and _is_usable(text, persona):
+        if text and _is_usable(text, persona, expect_lang):
             reply = _clean(text, persona)
             if reply:
                 return reply
@@ -486,16 +495,17 @@ def schedule_reply(kind: str, target: str, sender: str, text: str, history: list
     sender  the role that just sent the message
     history messages before this one (dicts with "from" and "text"), oldest first
     A customer channel ("cust-<client code>", or the shared #client-updates queue) always gets a
-    customer reply, in Chinese — never a teammate, even if a staff member's name is mentioned there.
-    A team channel gets a teammate reply in character, in the language the message was written in.
-    Silently does nothing if no API key is configured or every model fails.
+    customer reply — never a teammate, even if a staff member's name is mentioned there. A team
+    channel gets a teammate reply in character. Either way the reply matches the language `text`
+    was written in (English → English, Chinese → Chinese). Silently does nothing if no API key is
+    configured or every model fails.
     """
     key = (_secret("OPENROUTER_API_KEY") or "").strip()
     if not key or not text.strip():
         return
     cfg = _model_config()
 
-    ident = None
+    ident, expect_lang = None, None
     if kind == "dm":
         persona, where = target, f"a direct message with {sender}"
         person = staff.by_identity(persona)
@@ -504,6 +514,7 @@ def schedule_reply(kind: str, target: str, sender: str, text: str, history: list
     elif is_customer_facing(target):
         ident, where = _customer_context(target, history)
         persona = ident["label"]
+        expect_lang = _detect_lang(text)              # match the team member's message: en → en, zh → zh
     else:                                             # team channel → a teammate answers
         persona = _pick_channel_persona(target, sender, text)
         if not persona:
@@ -517,7 +528,7 @@ def schedule_reply(kind: str, target: str, sender: str, text: str, history: list
     def _worker() -> None:
         try:
             started = time.monotonic()
-            reply = _generate(persona, messages, key, cfg)
+            reply = _generate(persona, messages, key, cfg, expect_lang)
             if not reply:
                 return
             # The delay includes model latency: wait out whatever is left of it.
@@ -594,6 +605,15 @@ def _opener_messages(where: str, history: list, ident: dict) -> list:
     return msgs
 
 
+def _last_human_lang(history: list) -> str:
+    """Language of the last non-customer message in `history` ('en'/'zh'); 'zh' if there is none —
+    a customer opening a new conversation with no prior team message defaults to Chinese."""
+    for h in reversed(history):
+        if not is_customer(h.get("from", "")):
+            return _detect_lang(h.get("text", ""))
+    return "zh"
+
+
 def _idle_seconds(msgs: list) -> float:
     if not msgs:
         return float("inf")
@@ -623,7 +643,9 @@ def _customer_loop(state: dict, key: str, cfg: tuple, cap: int) -> None:
                 if _idle_seconds(msgs) < state["gap"]:
                     continue
                 ident, where = _customer_context(ch_id, msgs)
-                reply = _generate(ident["label"], _opener_messages(where, msgs, ident), key, cfg)
+                reply = _generate(
+                    ident["label"], _opener_messages(where, msgs, ident), key, cfg, _last_human_lang(msgs),
+                )
                 if reply:
                     store.bg_post_channel(ident["label"], ch_id, reply)
                     state["count"] += 1
