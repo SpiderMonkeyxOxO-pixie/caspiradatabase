@@ -4,11 +4,13 @@ When someone sends a message, an AI replies in character after ~10 seconds. The 
 generated and posted from a background thread so the UI never blocks; the existing
 2-second message pollers pick it up.
 
-  Customer conversations (one per client account) → a customer of that company (shown as e.g.
-              "Autofix Customer Tan Wei Ming") who raises specific concerns about their own
-              servers, always in Mandarin Chinese, so the team can practise serving customers.
-  Team channels → a teammate from staff.py answers as a coworker, in the language it was written in
-              (English → English, Chinese → Chinese) — but only one who is not signed in.
+  Customer conversations (one per client account, opened via the company chips) → a customer of
+              that company (shown as e.g. "Autofix Customer Tan Wei Ming") who raises specific
+              concerns about their own servers, always in Mandarin Chinese.
+  #client-updates → a shared customer queue: a customer of ANY company (never a teammate), so a
+              real staff member's name is never impersonated there.
+  Other team channels → a teammate from staff.py answers as a coworker, in the language it was
+              written in (English → English, Chinese → Chinese) — only one who is not signed in.
   DMs       → the DM partner answers the same way, only if nobody is signed in as them.
 
 Models are tried in order because free models are often rate-limited (429) or overloaded:
@@ -65,11 +67,11 @@ FALLBACK_MODELS = [
 # The team are real people who sign in. An AI teammate stands in only for someone who is NOT signed
 # in right now, so it never talks over a real person.
 
-# Which positions plausibly chime in on a team channel. Channels not listed → anyone.
+# #client-updates is a shared customer queue (see GENERIC_CUSTOMER_CHANNEL below), not a
+# staff channel, so it is deliberately absent here.
 _CHANNEL_POSITIONS = {
     "incidents":         ["I.T Assistant", "Manager", "Supervisor", "Customer Service"],
     "security":          ["I.T Assistant"],
-    "client-updates":    ["Customer Service", "Manager", "Supervisor", "Social Media Support Specialist"],
     "reports-analytics": ["Manager", "Supervisor", "Computer Operator"],
 }
 
@@ -155,6 +157,31 @@ def _make_identity(client: dict, person: str) -> dict:
 
 def client_by_code(code) -> dict:
     return next((c for c in tm.CLIENTS if c["code"] == code), None)
+
+
+# #client-updates is a shared customer queue: any of the 11 companies' customers may write there
+# (unlike the cust-<code> channels, which each belong to one company). AI replies there are always
+# a customer, never a teammate — those bots must never speak in someone else's name.
+GENERIC_CUSTOMER_CHANNEL = "client-updates"
+
+
+def is_customer_facing(channel_id: str) -> bool:
+    return store.is_customer_channel(channel_id) or channel_id == GENERIC_CUSTOMER_CHANNEL
+
+
+def _customer_context(channel_id: str, history: list, client: dict = None) -> tuple:
+    """(ident, where) for a customer conversation in `channel_id` — tied to one company for a
+    cust-<code> channel, or any company (reused for the rest of that thread) for the shared queue."""
+    if store.is_customer_channel(channel_id):
+        client = client or client_by_code(channel_id[len(store.CUSTOMER_PREFIX):])
+        ident = _customer_identity(history, client)
+        where = _customer_where(channel_id)
+    else:
+        ident = _customer_identity(history, client)
+        ch = store.channel_by_id(channel_id)
+        where = (f"a shared support inbox that customers from several different companies write "
+                 f"into ({ch['name']} — {ch['desc']})")
+    return ident, where
 
 
 def _new_customer(client: dict = None) -> dict:
@@ -458,9 +485,10 @@ def schedule_reply(kind: str, target: str, sender: str, text: str, history: list
     kind    "channel" (target = channel id) or "dm" (target = the partner role, who replies)
     sender  the role that just sent the message
     history messages before this one (dicts with "from" and "text"), oldest first
-    In a customer channel ("cust-<client code>") a customer of that company answers, in Chinese. In a team
-    channel a teammate role answers in character, in the language the message was written in. Silently
-    does nothing if no API key is configured or every model fails.
+    A customer channel ("cust-<client code>", or the shared #client-updates queue) always gets a
+    customer reply, in Chinese — never a teammate, even if a staff member's name is mentioned there.
+    A team channel gets a teammate reply in character, in the language the message was written in.
+    Silently does nothing if no API key is configured or every model fails.
     """
     key = (_secret("OPENROUTER_API_KEY") or "").strip()
     if not key or not text.strip():
@@ -473,10 +501,9 @@ def schedule_reply(kind: str, target: str, sender: str, text: str, history: list
         person = staff.by_identity(persona)
         if person is None or persona == sender or staff.account(person) in store.live_accounts():
             return                                    # only stand in for someone who is not signed in
-    elif store.is_customer_channel(target):
-        ident = _customer_identity(history, client_by_code(target[len(store.CUSTOMER_PREFIX):]))
+    elif is_customer_facing(target):
+        ident, where = _customer_context(target, history)
         persona = ident["label"]
-        where = _customer_where(target)
     else:                                             # team channel → a teammate answers
         persona = _pick_channel_persona(target, sender, text)
         if not persona:
@@ -587,7 +614,7 @@ def _customer_loop(state: dict, key: str, cfg: tuple, cap: int) -> None:
                 state["day"], state["count"] = today, 0
             if state["count"] >= cap:
                 continue
-            order = [c["id"] for c in store.CUSTOMER_CHANNELS]
+            order = [c["id"] for c in store.CUSTOMER_CHANNELS] + [GENERIC_CUSTOMER_CHANNEL]
             random.shuffle(order)
             for ch_id in order:
                 msgs = store.bg_recent_channel_messages(ch_id, 12)
@@ -595,11 +622,8 @@ def _customer_loop(state: dict, key: str, cfg: tuple, cap: int) -> None:
                     continue                                # a question is still waiting for an answer
                 if _idle_seconds(msgs) < state["gap"]:
                     continue
-                client = client_by_code(ch_id[len(store.CUSTOMER_PREFIX):])
-                ident = _new_customer(client)
-                reply = _generate(
-                    ident["label"], _opener_messages(_customer_where(ch_id), msgs, ident), key, cfg,
-                )
+                ident, where = _customer_context(ch_id, msgs)
+                reply = _generate(ident["label"], _opener_messages(where, msgs, ident), key, cfg)
                 if reply:
                     store.bg_post_channel(ident["label"], ch_id, reply)
                     state["count"] += 1
