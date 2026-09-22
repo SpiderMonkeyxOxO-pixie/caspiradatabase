@@ -251,6 +251,24 @@ div[data-testid="stTooltipHoverTarget"] + div,
     border: 1px solid rgba(255,255,255,0.12) !important; border-radius: 6px !important;
 }
 
+/* ── File uploader (Attach file or image) ─────────────────────────── */
+div[data-testid="stFileUploaderDropzone"] {
+    background: rgba(var(--line-rgb),0.04) !important; border: 1px solid rgba(var(--line-rgb),0.1) !important;
+    border-radius: 8px !important;
+}
+div[data-testid="stFileUploaderDropzone"] span,
+div[data-testid="stFileUploaderDropzone"] small,
+div[data-testid="stFileUploaderDropzone"] p {
+    color: var(--text-4) !important;
+}
+div[data-testid="stFileUploaderDropzone"] button {
+    background: rgba(var(--line-rgb),0.06) !important; border: 1px solid rgba(var(--line-rgb),0.14) !important;
+    color: var(--text-2) !important; font-weight: 500 !important;
+}
+div[data-testid="stFileUploaderDropzone"] button:hover {
+    background: rgba(var(--line-rgb),0.1) !important; border-color: rgba(var(--line-rgb),0.22) !important;
+}
+
 /* ── Popover trigger button ───────────────────────────────────────── */
 div[data-testid="stPopover"] > div > button {
     background: rgba(var(--line-rgb),0.04) !important; border: 1px solid rgba(var(--line-rgb),0.1) !important;
