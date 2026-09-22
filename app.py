@@ -213,6 +213,44 @@ div[data-testid="stVerticalBlockBorderWrapper"] > div { gap: 0.9rem; }
 .stButton button[kind="tertiary"] { background: transparent !important; border-color: transparent !important; color: var(--text-5) !important; }
 .stButton button[kind="tertiary"]:hover { background: rgba(var(--line-rgb),0.05) !important; color: var(--text-3) !important; }
 
+/* ── Segmented control (e.g. Channels / Direct Messages) ─────────────
+   st.segmented_control is a different widget than st.button (BaseWeb ButtonGroup), so it needs
+   its own rules — several selector forms since the exact testid/attribute varies by version. */
+div[data-testid="stSegmentedControl"] { background: transparent !important; }
+div[data-testid="stSegmentedControl"] label,
+div[data-baseweb="button-group"] label,
+div[data-testid="stSegmentedControl"] button,
+div[data-baseweb="button-group"] button {
+    background: rgba(var(--line-rgb),0.04) !important; border: 1px solid rgba(var(--line-rgb),0.1) !important;
+    color: var(--text-4) !important; font-weight: 500 !important; font-size: 0.83rem !important;
+    font-family: 'Inter', sans-serif !important; transition: all 0.15s !important;
+}
+div[data-testid="stSegmentedControl"] label:hover,
+div[data-baseweb="button-group"] label:hover,
+div[data-testid="stSegmentedControl"] button:hover,
+div[data-baseweb="button-group"] button:hover {
+    background: rgba(var(--line-rgb),0.08) !important; color: var(--text-2) !important;
+}
+div[data-testid="stSegmentedControl"] label[aria-checked="true"],
+div[data-testid="stSegmentedControl"] label[data-checked="true"],
+div[data-testid="stSegmentedControl"] button[aria-checked="true"],
+div[data-baseweb="button-group"] label[aria-checked="true"],
+div[data-baseweb="button-group"] button[aria-checked="true"],
+div[data-testid="stSegmentedControl"] [aria-selected="true"] {
+    background: rgba(34,211,238,0.13) !important; border-color: rgba(34,211,238,0.38) !important;
+    color: #22d3ee !important; font-weight: 600 !important;
+}
+
+/* ── Native help-text tooltip (the "?" hover on buttons/widgets) ─────
+   This is Streamlit's own tooltip, not one of our components — keep it dark/light-readable in
+   both themes rather than trying to fully match the page palette. */
+div[data-testid="stTooltipContent"],
+div[data-testid="stTooltipHoverTarget"] + div,
+[role="tooltip"] {
+    background: #0f172a !important; color: #e2e8f0 !important;
+    border: 1px solid rgba(255,255,255,0.12) !important; border-radius: 6px !important;
+}
+
 /* ── Popover trigger button ───────────────────────────────────────── */
 div[data-testid="stPopover"] > div > button {
     background: rgba(var(--line-rgb),0.04) !important; border: 1px solid rgba(var(--line-rgb),0.1) !important;
