@@ -411,6 +411,8 @@ def _call(model: str, messages: list, key: str, timeout: float):
         # The account's daily free allowance is used up. It is shared by every free model, so
         # trying more models is pointless — stop, and don't call again for a while.
         _limit_until = time.time() + 1800
+        print("[ai_support] OpenRouter free daily allowance used up — pausing replies for 30 min. "
+              "Add credit at openrouter.ai to raise the ~50/day limit.", flush=True)
         return None, True
     if r.status_code != 200:
         return None, False                       # 429 / 5xx / 402 / 404 → next model
@@ -469,20 +471,28 @@ def _generate(persona: str, messages: list, key: str, cfg: tuple, expect_lang: s
     """First usable reply from the model chain, or None (all busy, or the daily allowance is used up).
     `expect_lang` ('zh'/'en'), for a customer reply, is the language it must be written in."""
     if time.time() < _limit_until:
+        print(f"[ai_support] skipped reply for {persona!r} — still within the post-daily-limit pause.", flush=True)
         return None
     models = _model_chain(cfg)                   # may fetch the free-model list (cached 6 h)
     deadline = time.monotonic() + _TOTAL_BUDGET_S
+    tried, rejected = 0, 0
     for model in models:
         remaining = deadline - time.monotonic()
         if remaining < 5:
             break
+        tried += 1
         text, fatal = _call(model, messages, key, min(_PER_MODEL_TIMEOUT_S, remaining))
         if fatal:
             break
-        if text and _is_usable(text, persona, expect_lang):
-            reply = _clean(text, persona)
-            if reply:
-                return reply
+        if text:
+            if _is_usable(text, persona, expect_lang):
+                reply = _clean(text, persona)
+                if reply:
+                    return reply
+            else:
+                rejected += 1
+    print(f"[ai_support] no usable reply for {persona!r} after {tried} model(s) "
+          f"({rejected} rejected — wrong language or leaked reasoning).", flush=True)
     return None
 
 
